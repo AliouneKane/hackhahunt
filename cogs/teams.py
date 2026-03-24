@@ -5,6 +5,7 @@ import database as db
 import os
 
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
+ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 
 class Teams(commands.Cog):
 
@@ -162,8 +163,11 @@ class Teams(commands.Cog):
             delta = deadline - now
             days_left = delta.days
 
-            if days_left in [7, 3, 1]:
-                # Trouver les équipes concernées
+            if days_left < 0:
+                # Deadline dépassée → archivage
+                await self._archive_hackathon(guild, hack)
+            elif days_left in [7, 3, 1]:
+                # Rappel avant deadline
                 conn = db.get_connection()
                 teams = conn.execute(
                     "SELECT * FROM teams WHERE hackathon_id = ? AND status = 'active'",
@@ -178,6 +182,49 @@ class Teams(commands.Cog):
                             f"⏰ **Rappel** — Plus que **{days_left} jour(s)** avant la deadline d'inscription pour **{hack['title']}** !\n"
                             f"Lien : {hack.get('url', 'N/A')}"
                         )
+
+    async def _archive_hackathon(self, guild: discord.Guild, hack: dict):
+        """Archive un hackathon expiré : poste dans #archives et marque en base."""
+        archives_channel = guild.get_channel(ARCHIVES_CHANNEL_ID)
+        if not archives_channel:
+            print(f"  [Archive] Canal archives introuvable (ID: {ARCHIVES_CHANNEL_ID})")
+            return
+
+        embed = discord.Embed(
+            title=f"📁 Hackathon archivé — {hack['title']}",
+            description=(
+                f"La deadline d'inscription pour ce hackathon est **passée**.\n"
+                f"Il a été archivé automatiquement."
+            ),
+            color=0x808080
+        )
+        if hack.get("url"):
+            embed.add_field(name="Lien", value=hack["url"], inline=False)
+        if hack.get("deadline"):
+            embed.add_field(name="Deadline était", value=hack["deadline"], inline=True)
+        if hack.get("source"):
+            embed.add_field(name="Source", value=hack["source"].capitalize(), inline=True)
+        if hack.get("score"):
+            embed.add_field(name="Score Hackahunt", value=f"{hack['score']}/10", inline=True)
+        embed.set_footer(text="Hackahunt • Archivage automatique")
+
+        await archives_channel.send(embed=embed)
+
+        # Marquer le hackathon comme archivé en base
+        conn = db.get_connection()
+        conn.execute(
+            "UPDATE hackathons SET status = 'archived' WHERE id = ?",
+            (hack["id"],)
+        )
+        # Marquer les équipes associées comme terminées
+        conn.execute(
+            "UPDATE teams SET status = 'archived' WHERE hackathon_id = ?",
+            (hack["id"],)
+        )
+        conn.commit()
+        conn.close()
+
+        print(f"  [Archive] '{hack['title']}' archivé.")
 
     @check_deadlines.before_loop
     async def before_check(self):

@@ -84,7 +84,6 @@ class JoinTeamView(ui.View):
         channel = guild.get_channel(int(self.open_team["channel_id"]))
         if channel:
             await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
-            db.create_team.__module__  # juste pour éviter l'import inutilisé
             # Ajouter le membre à l'équipe en base
             conn = db.get_connection()
             conn.execute(
@@ -171,7 +170,6 @@ class Matchmaking(commands.Cog):
             return
 
         # Trouver le hackathon commun le plus récent
-        user_interests = db.get_interested_users.__module__
         conn = db.get_connection()
         row = conn.execute("""
             SELECT h.* FROM hackathons h

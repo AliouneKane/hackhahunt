@@ -161,13 +161,16 @@ def _detect_level(text: str) -> str:
 def filter_and_score(hackathons: list) -> list:
     results = []
     skipped = 0
+    low_score = 0
     for hack in hackathons:
         scored = score_hackathon(hack)
         if scored["skip"]:
             skipped += 1
             continue
-        if scored["score"] >= 5:
+        if scored["score"] >= 3:  # Seuil basé de 5 à 3 pour capturer plus de hackathons
             results.append(scored)
+        else:
+            low_score += 1
     results.sort(key=lambda h: h["score"], reverse=True)
-    print(f"  [Scorer] {len(results)} hackathons retenus, {skipped} exclus")
+    print(f"  [Scorer] {len(results)} hackathons retenus, {skipped} exclus (thème hors profil), {low_score} score trop bas")
     return results

@@ -133,6 +133,32 @@ async def archive_now(interaction: discord.Interaction):
     else:
         await interaction.followup.send(f"✅ Action terminée ! **{count}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
 
+@bot.tree.command(name="diagnose", description="Diagnostique la configuration du bot et des canaux")
+async def diagnose(interaction: discord.Interaction):
+    """Vérifie la config et les accès aux salons."""
+    import os
+    await interaction.response.defer(ephemeral=True)
+    
+    h_id_str = os.getenv("HACKATHON_CHANNEL_ID")
+    a_id_str = os.getenv("ARCHIVES_CHANNEL_ID")
+    
+    h_channel = bot.get_channel(int(h_id_str.strip())) if h_id_str and h_id_str.strip().isdigit() else None
+    a_channel = bot.get_channel(int(a_id_str.strip())) if a_id_str and a_id_str.strip().isdigit() else None
+    
+    report = f"🔍 **Diagnostic du Bot** :\n"
+    report += f"- `HACKATHON_CHANNEL_ID`: `{h_id_str}` (Trouvé: {'✅' if h_channel else '❌'})\n"
+    report += f"- `ARCHIVES_CHANNEL_ID`: `{a_id_str}` (Trouvé: {'✅' if a_channel else '❌'})\n"
+    
+    if h_channel:
+        report += f"- Salon Hack: `#{h_channel.name}`\n"
+    if a_channel:
+        report += f"- Salon Arch: `#{a_channel.name}`\n"
+        
+    if not h_channel or not a_channel:
+        report += "\n⚠️ **Conseil** : Si un salon est marqué ❌, vérifie l'ID et assure-toi que le bot a la permission 'Voir le salon' dessus."
+        
+    await interaction.followup.send(report)
+
 # ── Lancement ────────────────────────────────────────────────────────────────
 async def main():
     async with bot:

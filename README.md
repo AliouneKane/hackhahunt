@@ -34,11 +34,22 @@ L'objectif de HackaHunt est de :
 - **Filtrage et Notation Intelligents** : Filtre automatiquement les thèmes non pertinents et classe les hackathons selon des critères de qualité prédéfinis. Seuls les événements atteignant un score minimum sont conservés.
 - **Annonces Périodiques Intelligentes** : Pour éviter le spam de notifications, le bot utilise une file d'attente. Il enregistre silencieusement tous les hackathons découverts et diffuse un maximum de 10 nouvelles annonces par heure dans le canal sélectionné.
 - **Embeds Discord Enrichis** : Présentation détaillée des informations cruciales, y compris les prix globaux, les formats de participation (100% en ligne, en présentiel, hybride), le lieu et la taille des équipes attendues (généralement 1 à 4 membres).
-- **Gestion Automatisée des Deadlines** : Le bot utilise `dateparser` pour surveiller activement les dates limites d'inscription. Il filtre et ignore les hackathons déjà expirés pendant le scraping. Pour les hackathons déjà postés dont la deadline passe, le bot les déplace automatiquement vers un **canal d'archives** pour maintenir la clarté du canal principal d'annonces.
+- **Gestion Automatisée des Deadlines** : Le bot utilise `dateparser` pour surveiller activement les dates limites d'inscription. Il filtre et ignore les hackathons déjà expirés pendant le scraping. Pour les hackathons déjà postés dont la deadline passe, le bot **supprime le message du canal principal** et le **reposte automatiquement dans le canal d'archives** pour maintenir la clarté des annonces actives.
 - **Matchmaking et Gestion d'Équipes** :
   - Les utilisateurs peuvent réagir avec un émoji spécifique sur une annonce pour entrer dans une file d'attente de matchmaking.
   - Le bot crée dynamiquement des salons textuels privés pour les équipes nouvellement formées afin de faciliter la coordination.
   - Des notifications par messages privés sont envoyées automatiquement aux membres de l'équipe.
+
+## Commandes Slash disponibles
+
+| Commande | Accès | Description |
+| --- | --- | --- |
+| `/ping` | Tous | Vérifie la latence du bot |
+| `/aide` | Tous | Liste toutes les commandes disponibles |
+| `/scrape` | Admin | Lance un scraping manuel immédiat |
+| `/archive_now` | Admin | Force l'archivage des hackathons expirés |
+| `/test_archive` | Admin | Crée un hackathon fictif et le poste, puis l'archive automatiquement après N minutes (défaut : 5 min) — utile pour tester le pipeline en local |
+| `/diagnose` | Tous | Vérifie la configuration des canaux dans le `.env` |
 
 ## Prérequis
 

@@ -20,6 +20,7 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 
 # ── Chargement des cogs ──────────────────────────────────────────────────────
 async def load_cogs():
+    await bot.load_extension("cogs.hackathons")
     await bot.load_extension("cogs.matchmaking")
     await bot.load_extension("cogs.teams")
     print("✅ Cogs chargés")
@@ -36,6 +37,7 @@ async def on_ready():
         print(f"❌ Erreur sync commandes : {e}")
     db.init_db()
     scraping_task.start()
+    post_pending_task.start()
 
 @tasks.loop(hours=6)
 async def scraping_task():
@@ -43,8 +45,15 @@ async def scraping_task():
     from scraper.runner import run_all_scrapers
     await run_all_scrapers(bot)
 
+@tasks.loop(hours=1)
+async def post_pending_task():
+    """Poste 10 hackathons par heure pour éviter le spam."""
+    from scraper.runner import post_pending_hackathons
+    await post_pending_hackathons(bot, limit=10)
+
 @scraping_task.before_loop
-async def before_scraping():
+@post_pending_task.before_loop
+async def before_tasks():
     await bot.wait_until_ready()
 
 @bot.event
@@ -89,10 +98,16 @@ async def aide(interaction: discord.Interaction):
 @discord.app_commands.default_permissions(administrator=True)
 async def scrape(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    from scraper.runner import run_all_scrapers
-    posted = await run_all_scrapers(bot)
+    from scraper.runner import run_all_scrapers, post_pending_hackathons
+    
+    saved = await run_all_scrapers(bot)
+    
+    # On force la publication de la 1ère dizaine immédiatement en manuel
+    posted = await post_pending_hackathons(bot, limit=10)
+    
     await interaction.followup.send(
-        f"✅ Scraping terminé ! **{posted or 0}** nouveau(x) hackathon(s) posté(s).",
+        f"✅ Scraping terminé ! **{saved}** nouveau(x) hackathon(s) trouvés en base.\n"
+        f"**{posted}** annoncés immédiatement. Le reste sera diffusé à raison de 10 toutes les heures.",
         ephemeral=True
     )
 

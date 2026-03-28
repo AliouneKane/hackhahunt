@@ -77,24 +77,43 @@ async def run_all_scrapers(bot: discord.Client):
         print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
         return 0
 
-    posted = 0
+    new_inserts = 0
     for hack in filtered:
+        # Seuls les hacks n'existant pas encore seront ajoutés (id is not None)
         hack_id = db.insert_hackathon(hack)
-        if hack_id is None:
-            continue
+        if hack_id is not None:
+            new_inserts += 1
 
+    print(f"Scraping fini : {new_inserts} nouveaux hackathons insérés en base (en attente de post).")
+    return new_inserts
+
+
+async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
+    """Poste une poignée de hackathons encore non publiés pour éviter de spammer."""
+    channel = bot.get_channel(HACKATHON_CHANNEL_ID)
+    if not channel:
+        print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
+        return 0
+
+    pending = db.get_unposted_hackathons(limit=limit)
+    if not pending:
+        return 0
+
+    print(f"🚀 Publication de {len(pending)} hackathons en attente...")
+    posted = 0
+    for hack in pending:
         embed = build_embed(hack)
         try:
             msg = await channel.send(embed=embed)
             await msg.add_reaction("👍")
             await msg.add_reaction("❌")
-            db.update_message_id(hack_id, str(msg.id))
+            db.update_message_id(hack["id"], str(msg.id))
             posted += 1
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
         except Exception as e:
             print(f"  Erreur envoi Discord : {e}")
 
-    print(f"{posted} nouveaux hackathons postés sur Discord")
+    print(f"{posted} nouveaux hackathons postés sur Discord ce tour-ci !")
     return posted
 
 

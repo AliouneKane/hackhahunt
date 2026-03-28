@@ -124,7 +124,7 @@ async def scrape(interaction: discord.Interaction):
 async def archive_now(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     from scraper.runner import archive_expired_hackathons
-    count = await archive_expired_hackathons(bot)
+    count = await archive_expired_hackathons(bot, guild=interaction.guild)
     
     if count is None:
         await interaction.followup.send("❌ Erreur : Impossible de trouver les canaux (Assurez-vous que les IDs `HACKATHON_CHANNEL_ID` et `ARCHIVES_CHANNEL_ID` sont valides).", ephemeral=True)

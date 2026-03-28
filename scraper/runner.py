@@ -217,15 +217,15 @@ def build_embed(hack: dict) -> discord.Embed:
     return embed
 
 
-async def archive_expired_hackathons(bot: discord.Client):
+async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild = None):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
-    guild = bot.get_guild(GUILD_ID)
-    if guild:
-        hack_channel = guild.get_channel(HACKATHON_CHANNEL_ID)
-        arch_channel = guild.get_channel(ARCHIVES_CHANNEL_ID)
-    else:
-        hack_channel = None
-        arch_channel = None
+    if guild is None:
+        guild = bot.get_guild(GUILD_ID)
+
+    print(f"  [Archive] guild={guild} | hack_id={HACKATHON_CHANNEL_ID} | arch_id={ARCHIVES_CHANNEL_ID}")
+
+    hack_channel = guild.get_channel(HACKATHON_CHANNEL_ID) if guild else None
+    arch_channel = guild.get_channel(ARCHIVES_CHANNEL_ID) if guild else None
 
     if not hack_channel:
         try:

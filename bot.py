@@ -20,7 +20,6 @@ bot = commands.Bot(command_prefix="/", intents=intents)
 
 # ── Chargement des cogs ──────────────────────────────────────────────────────
 async def load_cogs():
-    await bot.load_extension("cogs.hackathons")
     await bot.load_extension("cogs.matchmaking")
     await bot.load_extension("cogs.teams")
     print("✅ Cogs chargés")

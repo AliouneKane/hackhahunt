@@ -118,6 +118,14 @@ async def scrape(interaction: discord.Interaction):
         ephemeral=True
     )
 
+@bot.tree.command(name="archive_now", description="Force manuellement la vérification et l'archivage des hackathons expirés (admin)")
+@discord.app_commands.default_permissions(administrator=True)
+async def archive_now(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    from scraper.runner import archive_expired_hackathons
+    await archive_expired_hackathons(bot)
+    await interaction.followup.send("✅ La commande d'archivage a été lancée pour les messages existants !", ephemeral=True)
+
 # ── Lancement ────────────────────────────────────────────────────────────────
 async def main():
     async with bot:

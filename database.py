@@ -136,6 +136,15 @@ def get_active_hackathons() -> list:
     conn.close()
     return [dict(r) for r in rows]
 
+def get_unposted_hackathons(limit: int = 10) -> list:
+    """Récupère les hackathons non encore publiés sur Discord"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM hackathons WHERE discord_message_id IS NULL AND status = 'active' ORDER BY score DESC, id ASC LIMIT ?", (limit,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute(

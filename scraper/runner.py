@@ -219,7 +219,18 @@ def build_embed(hack: dict) -> discord.Embed:
 async def archive_expired_hackathons(bot: discord.Client):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
     hack_channel = bot.get_channel(HACKATHON_CHANNEL_ID)
+    if not hack_channel:
+        try:
+            hack_channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
+        except:
+            pass
+
     arch_channel = bot.get_channel(ARCHIVES_CHANNEL_ID)
+    if not arch_channel:
+        try:
+            arch_channel = await bot.fetch_channel(ARCHIVES_CHANNEL_ID)
+        except:
+            pass
     
     if not hack_channel or not arch_channel:
         print("Canal hackathons ou archives introuvable. Archivage ignoré.")
@@ -227,6 +238,7 @@ async def archive_expired_hackathons(bot: discord.Client):
         
     posted_hacks = db.get_posted_hackathons()
     if not posted_hacks:
+        print("Aucun hackathon publié en base de données.")
         return
         
     import dateparser
@@ -239,7 +251,7 @@ async def archive_expired_hackathons(bot: discord.Client):
         expired = False
         
         if deadline_str:
-            d_clean = deadline_str.replace("byOFA", "").strip()
+            d_clean = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
             if " - " in d_clean:
                 d_clean = d_clean.split(" - ")[-1].strip()
             elif "-" in d_clean and not deadline_str.startswith("202"):
@@ -255,12 +267,16 @@ async def archive_expired_hackathons(bot: discord.Client):
             print(f"📦 Archivage de : {hack['title']}")
             try:
                 # 1. Tenter de supprimer l'ancien message
-                if hack.get("discord_message_id"):
+                msg_id_str = hack.get("discord_message_id", "").strip()
+                if msg_id_str and msg_id_str.isdigit():
                     try:
-                        old_msg = await hack_channel.fetch_message(int(hack["discord_message_id"]))
+                        old_msg = await hack_channel.fetch_message(int(msg_id_str))
                         await old_msg.delete()
                     except discord.NotFound:
                         pass # Le message était peut-être déjà supprimé
+                    except Exception as msg_ex:
+                        print(f"Impossible de supprimer le vieux message: {msg_ex}")
+                        pass
                         
                 # 2. Poster dans les archives
                 embed = build_embed(hack)
@@ -279,3 +295,5 @@ async def archive_expired_hackathons(bot: discord.Client):
 
     if archived_count > 0:
         print(f"✅ {archived_count} hackathons ont été archivés.")
+    else:
+        print("Aucun hackathon n'avait expiré.")

@@ -123,8 +123,14 @@ async def scrape(interaction: discord.Interaction):
 async def archive_now(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     from scraper.runner import archive_expired_hackathons
-    await archive_expired_hackathons(bot)
-    await interaction.followup.send("✅ La commande d'archivage a été lancée pour les messages existants !", ephemeral=True)
+    count = await archive_expired_hackathons(bot)
+    
+    if count is None:
+        await interaction.followup.send("❌ Erreur : Impossible de trouver les canaux (Assurez-vous que les IDs `HACKATHON_CHANNEL_ID` et `ARCHIVES_CHANNEL_ID` sont valides).", ephemeral=True)
+    elif count == 0:
+        await interaction.followup.send("✅ Vérification terminée. **0** hackathon n'a eu besoin d'être archivé (tous sont encore encore valides ou la base est vide).", ephemeral=True)
+    else:
+        await interaction.followup.send(f"✅ Action terminée ! **{count}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
 
 # ── Lancement ────────────────────────────────────────────────────────────────
 async def main():

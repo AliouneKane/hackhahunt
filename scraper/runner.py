@@ -234,12 +234,12 @@ async def archive_expired_hackathons(bot: discord.Client):
     
     if not hack_channel or not arch_channel:
         print("Canal hackathons ou archives introuvable. Archivage ignoré.")
-        return
+        return None
         
     posted_hacks = db.get_posted_hackathons()
     if not posted_hacks:
         print("Aucun hackathon publié en base de données.")
-        return
+        return 0
         
     import dateparser
     from datetime import datetime
@@ -297,3 +297,5 @@ async def archive_expired_hackathons(bot: discord.Client):
         print(f"✅ {archived_count} hackathons ont été archivés.")
     else:
         print("Aucun hackathon n'avait expiré.")
+    
+    return archived_count

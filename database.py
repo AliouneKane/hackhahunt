@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from typing import Optional
 
 DB_PATH = "hackahunt.db"
 
@@ -93,7 +94,7 @@ def init_db():
     print("✅ Base de données initialisée")
 
 # ── Hackathons ────────────────────────────────────────────────────────────────
-def insert_hackathon(data: dict) -> int | None:
+def insert_hackathon(data: dict) -> Optional[int]:
     conn = get_connection()
     c = conn.cursor()
     try:
@@ -135,7 +136,7 @@ def get_active_hackathons() -> list:
     conn.close()
     return [dict(r) for r in rows]
 
-def get_hackathon_by_message(message_id: str) -> dict | None:
+def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute(
         "SELECT * FROM hackathons WHERE discord_message_id = ?", (message_id,)
@@ -229,7 +230,7 @@ def create_team(hackathon_id: int, member_ids: list, channel_id: str, channel_na
     conn.close()
     return team_id
 
-def get_user_team(hackathon_id: int, user_id: str) -> dict | None:
+def get_user_team(hackathon_id: int, user_id: str) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute("""
         SELECT t.* FROM teams t

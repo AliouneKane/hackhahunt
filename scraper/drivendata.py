@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import re
+from typing import Optional
 
 BASE_URL = "https://www.drivendata.org/competitions/"
 HEADERS = {
@@ -32,7 +33,7 @@ def scrape_drivendata() -> list:
     return hackathons
 
 
-def _parse_card(card) -> dict | None:
+def _parse_card(card) -> Optional[dict]:
     try:
         title_el = card.select_one("h2, h3, h4, .title, [class*='title']")
         title = title_el.get_text(strip=True) if title_el else None

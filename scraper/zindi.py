@@ -1,61 +1,68 @@
+"""
+scraper/zindi.py — Scraper Zindi Africa via API JSON officielle
+Plus fiable que le HTML (site dynamique).
+API endpoint: https://api.zindi.africa/v1/competitions
+"""
 import requests
-from bs4 import BeautifulSoup
-import time
 import re
+from typing import Optional
 
-BASE_URL = "https://zindi.africa/competitions"
+API_URL = "https://api.zindi.africa/v1/competitions"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
 }
 
+
 def scrape_zindi() -> list:
-    """Scrape les compétitions actives sur Zindi Africa"""
+    """Scrape les compétitions actives sur Zindi Africa via l'API JSON"""
     hackathons = []
-
     print("  [Zindi] Scraping en cours...")
-    try:
-        resp = requests.get(BASE_URL, headers=HEADERS, timeout=15)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"  [Zindi] Erreur : {e}")
-        return []
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    cards = soup.select(".competition-card, article, [class*='competition']")
+    seen_ids = set()
+    for status in ["active", "upcoming"]:
+        try:
+            resp = requests.get(API_URL, params={"status": status}, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"  [Zindi] Erreur ({status}) : {e}")
+            continue
 
-    for card in cards:
-        hack = _parse_zindi_card(card)
-        if hack:
-            hackathons.append(hack)
+        competitions = data.get("data", [])
+        for comp in competitions:
+            hack = _parse_comp(comp)
+            if hack and hack["url"] not in seen_ids:
+                seen_ids.add(hack["url"])
+                hackathons.append(hack)
+
 
     print(f"  [Zindi] {len(hackathons)} compétitions collectées")
     return hackathons
 
 
-def _parse_zindi_card(card) -> dict | None:
+def _parse_comp(comp: dict) -> Optional[dict]:
     try:
-        title_el = card.select_one("h2, h3, .title, [class*='title']")
-        title = title_el.get_text(strip=True) if title_el else None
+        title = comp.get("title", "").strip()
         if not title:
             return None
 
-        link_el = card.select_one("a[href]")
-        url = link_el["href"] if link_el else None
+        comp_id = comp.get("id", "")
+        url = f"https://zindi.africa/competitions/{comp_id}" if comp_id else None
         if not url:
             return None
-        if not url.startswith("http"):
-            url = "https://zindi.africa" + url
 
-        prize_el = card.select_one("[class*='prize'], [class*='reward'], [class*='award']")
-        prize_text = prize_el.get_text(strip=True) if prize_el else ""
+        reward = comp.get("reward", "") or ""
+        deadline = comp.get("end_time", "") or ""
+        # Simplifier la date ISO en format lisible
+        if "T" in deadline:
+            deadline = deadline.split("T")[0]
 
-        desc_el = card.select_one("p, [class*='desc']")
-        theme = desc_el.get_text(strip=True)[:200] if desc_el else ""
+        prize_text = reward.strip() if reward else ""
+        prize_min = _extract_min_fcfa(prize_text)
 
-        deadline_el = card.select_one("time, [class*='date'], [class*='deadline']")
-        deadline = ""
-        if deadline_el:
-            deadline = deadline_el.get("datetime") or deadline_el.get_text(strip=True)
+        kind = comp.get("kind", "competition")
+        theme = f"Compétition IA/Data — Afrique ({kind})"
 
         return {
             "source": "zindi",
@@ -65,10 +72,10 @@ def _parse_zindi_card(card) -> dict | None:
             "format": "online",  # Zindi = toujours en ligne
             "location": "En ligne — Afrique",
             "prize_raw": prize_text,
-            "prize_min_fcfa": _extract_min_fcfa(prize_text),
-            "prize_1st": _extract_prize_rank(prize_text, 1),
-            "prize_2nd": _extract_prize_rank(prize_text, 2),
-            "prize_3rd": _extract_prize_rank(prize_text, 3),
+            "prize_min_fcfa": prize_min,
+            "prize_1st": prize_text,
+            "prize_2nd": "",
+            "prize_3rd": "",
             "deadline": deadline,
             "language": "en",
         }
@@ -80,22 +87,11 @@ def _parse_zindi_card(card) -> dict | None:
 def _extract_min_fcfa(prize_text: str) -> int:
     if not prize_text:
         return 0
-    amounts = re.findall(r"\$\s?([\d,]+)", prize_text)
+    amounts = re.findall(r"\$\s*([\d,]+)", prize_text)
     if not amounts:
-        # Chercher en FCFA directement
         fcfa_amounts = re.findall(r"([\d,]+)\s*(?:FCFA|XOF)", prize_text)
         if fcfa_amounts:
             return int(fcfa_amounts[-1].replace(",", ""))
         return 0
     values = [int(a.replace(",", "")) for a in amounts]
     return int(min(values) * 655)
-
-
-def _extract_prize_rank(prize_text: str, rank: int) -> str:
-    if not prize_text:
-        return ""
-    amounts = re.findall(r"\$\s?([\d,]+)", prize_text)
-    if len(amounts) >= rank:
-        usd = int(amounts[rank - 1].replace(",", ""))
-        return f"${usd:,} (~{usd * 655:,} FCFA)"
-    return ""

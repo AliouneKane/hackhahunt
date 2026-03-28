@@ -1,107 +1,97 @@
+"""
+scraper/devpost.py — Scraper Devpost via API JSON officielle
+Plus fiable que le scraping HTML (site dynamique React).
+API endpoint: https://devpost.com/api/hackathons
+"""
 import requests
-from bs4 import BeautifulSoup
-import time
 import re
+from typing import Optional
 
-BASE_URL = "https://devpost.com/hackathons"
+BASE_API = "https://devpost.com/api/hackathons"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json",
 }
 
-def scrape_devpost(pages: int = 5) -> list:
-    """Scrape les hackathons sur Devpost — retourne une liste de dicts bruts"""
-    hackathons = []
 
+def scrape_devpost(pages: int = 5) -> list:
+    """Scrape les hackathons sur Devpost via l'API JSON officielle"""
+    hackathons = []
     for page in range(1, pages + 1):
-        url = f"{BASE_URL}?page={page}&order_by=deadline"
         print(f"  [Devpost] Page {page}...")
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp = requests.get(
+                BASE_API,
+                params={"order_by": "deadline", "status[]": ["upcoming", "open"], "page": page},
+                headers=HEADERS,
+                timeout=15,
+            )
             resp.raise_for_status()
+            data = resp.json()
         except Exception as e:
             print(f"  [Devpost] Erreur page {page} : {e}")
             break
 
-        soup = BeautifulSoup(resp.text, "html.parser")
-        cards = soup.select("article.hackathon-tile, div.hackathon-tile, li.hackathon")
-
-        if not cards:
-            # Essai avec un sélecteur alternatif
-            cards = soup.select("[class*='hackathon']")
-
-        if not cards:
-            print(f"  [Devpost] Aucune carte trouvée page {page}, arrêt.")
+        items = data.get("hackathons", [])
+        if not items:
+            print(f"  [Devpost] Page {page} vide, arrêt.")
             break
 
-        for card in cards:
-            hack = _parse_card(card)
+        for item in items:
+            hack = _parse_item(item)
             if hack:
                 hackathons.append(hack)
-
-        time.sleep(2)  # pause pour ne pas surcharger le serveur
 
     print(f"  [Devpost] {len(hackathons)} hackathons collectés")
     return hackathons
 
 
-def _parse_card(card) -> dict | None:
-    """Extrait les données d'une carte hackathon Devpost"""
+def _parse_item(item: dict) -> Optional[dict]:
     try:
-        # Titre
-        title_el = card.select_one("h2, h3, .title, [class*='title']")
-        title = title_el.get_text(strip=True) if title_el else None
+        title = item.get("title", "").strip()
         if not title:
             return None
 
-        # URL
-        link_el = card.select_one("a[href*='devpost.com'], a[href]")
-        url = link_el["href"] if link_el else None
+        url = item.get("url", "")
         if not url:
             return None
-        if not url.startswith("http"):
-            url = "https://devpost.com" + url
 
-        # Prix
-        prize_text = ""
-        prize_el = card.select_one("[class*='prize'], [class*='Prize']")
-        if prize_el:
-            prize_text = prize_el.get_text(strip=True)
+        # Localisation et format
+        location_info = item.get("displayed_location", {})
+        location = location_info.get("location", "Online")
+        location_icon = location_info.get("icon", "globe")
+        fmt = "online" if location_icon == "globe" else "in-person"
 
-        # Dates
-        deadline = ""
-        date_el = card.select_one("time, [class*='date'], [class*='deadline']")
-        if date_el:
-            deadline = date_el.get("datetime") or date_el.get_text(strip=True)
+        # Date (submission_period_dates)
+        deadline = item.get("submission_period_dates", "") or item.get("time_left_to_submission", "")
 
-        # Format (en ligne ou présentiel)
-        location = ""
-        loc_el = card.select_one("[class*='location'], [class*='where']")
-        if loc_el:
-            location = loc_el.get_text(strip=True)
+        # Thème depuis les tags
+        themes = item.get("themes", [])
+        theme = ", ".join(t.get("name", "") for t in themes if t.get("name"))
 
-        # Thème / description
-        theme = ""
-        desc_el = card.select_one("p, [class*='desc'], [class*='tagline']")
-        if desc_el:
-            theme = desc_el.get_text(strip=True)[:200]
+        # Prix (strip HTML du prize_amount)
+        prize_raw = item.get("prize_amount", "")
+        prize_clean = re.sub(r"<[^>]+>", "", prize_raw).strip()  # retirer HTML
+        prize_counts = item.get("prizes_counts", {})
+        prize_text = prize_clean if prize_clean not in ("$0", "0", "") else ""
 
         return {
             "source": "devpost",
             "title": title,
             "url": url,
             "theme": theme,
-            "format": _detect_format(location + " " + title + " " + theme),
+            "format": fmt,
             "location": location,
             "prize_raw": prize_text,
             "prize_min_fcfa": _extract_min_prize_fcfa(prize_text),
-            "prize_1st": _extract_prize_rank(prize_text, 1),
-            "prize_2nd": _extract_prize_rank(prize_text, 2),
-            "prize_3rd": _extract_prize_rank(prize_text, 3),
+            "prize_1st": prize_text if prize_text else "",
+            "prize_2nd": "",
+            "prize_3rd": "",
             "deadline": deadline,
             "language": _detect_language(title + " " + theme),
         }
     except Exception as e:
-        print(f"  [Devpost] Erreur parsing carte : {e}")
+        print(f"  [Devpost] Erreur parsing item : {e}")
         return None
 
 
@@ -113,7 +103,7 @@ def _detect_format(text: str) -> str:
         return "online"
     if any(w in text_lower for w in ["in-person", "présentiel", "on-site"]):
         return "in-person"
-    return "online"  # défaut : en ligne
+    return "online"
 
 
 def _detect_language(text: str) -> str:
@@ -124,27 +114,14 @@ def _detect_language(text: str) -> str:
         return "fr/en"
     if has_fr:
         return "fr"
-    return "en"  # défaut
+    return "en"
 
 
 def _extract_min_prize_fcfa(prize_text: str) -> int:
-    """Extrait le montant minimum (3e prix) et le convertit en FCFA — 1 USD ≈ 655 FCFA"""
     if not prize_text:
         return 0
     amounts = re.findall(r"\$\s?([\d,]+)", prize_text)
     if not amounts:
         return 0
     values = [int(a.replace(",", "")) for a in amounts]
-    min_val = min(values)
-    return int(min_val * 655)
-
-
-def _extract_prize_rank(prize_text: str, rank: int) -> str:
-    if not prize_text:
-        return ""
-    amounts = re.findall(r"\$\s?([\d,]+)", prize_text)
-    if len(amounts) >= rank:
-        usd = int(amounts[rank - 1].replace(",", ""))
-        fcfa = usd * 655
-        return f"${usd:,} (~{fcfa:,} FCFA)"
-    return ""
+    return int(min(values) * 655)

@@ -11,6 +11,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
+intents.guilds = True
 intents.message_content = True
 intents.members = True
 intents.reactions = True

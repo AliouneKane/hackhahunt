@@ -141,8 +141,15 @@ def build_embed(hack: dict) -> discord.Embed:
         prizes.append(f"2e : {hack['prize_2nd']}")
     if hack.get("prize_3rd"):
         prizes.append(f"3e : {hack['prize_3rd']}")
-    if prizes:
-        embed.add_field(name="Prix", value=" · ".join(prizes), inline=False)
+
+    prize_text = " · ".join(prizes)
+    if not prize_text and hack.get("prize_raw"):
+        prize_text = hack["prize_raw"]
+    
+    if prize_text:
+        embed.add_field(name="Prix à gagner", value=prize_text[:1024], inline=False)
+        
+    embed.add_field(name="Taille d'équipe", value="Généralement 1 à 4 personnes", inline=True)
 
     level_desc = LEVEL_DESCRIPTIONS.get(level, "")
     embed.add_field(name=f"Niveau : {level}", value=level_desc, inline=False)

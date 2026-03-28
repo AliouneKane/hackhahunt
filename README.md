@@ -1,83 +1,103 @@
 # HackaHunt
 
-HackaHunt is a comprehensive Discord bot designed to automate the discovery of hackathons and facilitate team creation (matchmaking) within your Discord community. It continuously monitors 12 major competition platforms and centralizes their announcements directly into your Discord server without overwhelming the users.
+HackaHunt est un bot Discord complet conçu pour automatiser la découverte de hackathons et faciliter la création d'équipes (matchmaking) au sein de votre communauté Discord. Il surveille en permanence de nombreuses plateformes de compétition majeures et centralise leurs annonces directement sur votre serveur Discord sans submerger les utilisateurs.
 
-## Main Features
+## Contexte du Projet
 
-- **Multi-Platform Scraping**: Automated data collection using official APIs and resilient HTML parsers. Supported platforms include:
-  - Devpost (via JSON API)
-  - Major League Hacking / MLH (Custom Tailwind CSS parser)
-  - Zindi Africa (via JSON API)
+Avec la multiplication des plateformes de compétitions informatiques et d'innovation (hackathons, datathons, concours de code), il est devenu difficile de rester à jour et de trouver des coéquipiers. HackaHunt est né de la volonté de centraliser ces opportunités pour une communauté de développeurs sur Discord, tout en automatisant la fastidieuse étape de recherche d'informations et de constitution d'équipes.
+
+## Objectif
+
+L'objectif de HackaHunt est de :
+1. **Centraliser l'information** : Récupérer automatiquement les hackathons pertinents depuis de multiples sources pour les afficher dans un seul canal.
+2. **Filtrer le bruit** : Ne garder que les hackathons de qualité, en excluant les événements passés ou ne correspondant pas aux thématiques du serveur.
+3. **Faciliter la collaboration** : Permettre aux membres du serveur Discord de trouver rapidement des coéquipiers en réagissant simplement aux annonces.
+
+## Stack Technologique
+
+- **Langage** : Python 3.9+
+- **Bot/API Discord** : `discord.py` (gestion du bot, des commandes slash et des événements)
+- **Base de données** : SQLite (gestion légère et autonome via `sqlite3` et requêtes SQL en Python)
+- **Scraping & Requêtes** : `requests` (Appels API JSON), `BeautifulSoup` (`bs4`), outils de parsing HTML personnalisés
+- **Gestion du Temps et des Dates** : `dateparser` (gestion intelligente et flexible des dates d'échéance)
+- **Environnement** : `python-dotenv` (pour la gestion sécurisée des variables d'environnement)
+
+## Fonctionnalités Principales
+
+- **Scraping Multi-Plateformes** : Collecte automatisée de données utilisant des APIs officielles et des analyseurs HTML résilients. Les plateformes prises en charge incluent :
+  - Devpost (via API JSON)
+  - Major League Hacking / MLH (Analyseur CSS Tailwind personnalisé)
+  - Zindi Africa (via API JSON)
   - DrivenData
   - Kaggle
-  - Additional sources (Eventbrite, ChallengeData, Challengerocket, etc.)
-- **Intelligent Filtering and Scoring**: Automatically filters out irrelevant themes and ranks hackathons based on predefined quality criteria. Only events meeting a strict scoring threshold are retained.
-- **Smart Paced Announcements**: To prevent notification spam, the bot implements a queued posting system. It saves all discovered hackathons silently and broadcasts a maximum of 10 new announcements per hour to the selected channel.
-- **Discord Rich Embeds**: Detailed presentation of crucial information, including prize pools (1st, 2nd, 3rd places, or overall prize values), participation formats (100% online, in-person, hybrid), location, and expected team sizes (typically 1 to 4 members).
-- **Automated Deadline Management**: The bot uses `dateparser` to actively monitor registration deadlines. It automatically screens out hackathons that have already expired during the scraping process to prevent database clutter. For hackathons already posted, expired events are strictly moved to an archive channel to maintain the clarity of the main announcements channel.
-- **Matchmaking and Team Management**:
-  - Users can react with a specific emoji on an announcement to enter a matchmaking queue.
-  - The bot dynamically provisions private Discord text channels for newly matched teams to coordinate.
-  - Automatic private message notifications are sent to team members.
+  - D'autres sources diverses (Eventbrite, ChallengeData, Challengerocket, etc.)
+- **Filtrage et Notation Intelligents** : Filtre automatiquement les thèmes non pertinents et classe les hackathons selon des critères de qualité prédéfinis. Seuls les événements atteignant un score minimum sont conservés.
+- **Annonces Périodiques Intelligentes** : Pour éviter le spam de notifications, le bot utilise une file d'attente. Il enregistre silencieusement tous les hackathons découverts et diffuse un maximum de 10 nouvelles annonces par heure dans le canal sélectionné.
+- **Embeds Discord Enrichis** : Présentation détaillée des informations cruciales, y compris les prix globaux, les formats de participation (100% en ligne, en présentiel, hybride), le lieu et la taille des équipes attendues (généralement 1 à 4 membres).
+- **Gestion Automatisée des Deadlines** : Le bot utilise `dateparser` pour surveiller activement les dates limites d'inscription. Il filtre et ignore les hackathons déjà expirés pendant le scraping. Pour les hackathons déjà postés dont la deadline passe, le bot les déplace automatiquement vers un **canal d'archives** pour maintenir la clarté du canal principal d'annonces.
+- **Matchmaking et Gestion d'Équipes** :
+  - Les utilisateurs peuvent réagir avec un émoji spécifique sur une annonce pour entrer dans une file d'attente de matchmaking.
+  - Le bot crée dynamiquement des salons textuels privés pour les équipes nouvellement formées afin de faciliter la coordination.
+  - Des notifications par messages privés sont envoyées automatiquement aux membres de l'équipe.
 
-## Prerequisites
+## Prérequis
 
-- Python 3.9 or higher
-- A Discord Developer account with a valid Bot Token.
-- Privileged Gateway Intents (specifically the Message Content Intent and Server Members Intent) must be enabled in the Discord Developer Portal.
+- Python 3.9 ou supérieur
+- Un compte Discord Developer avec un Token de Bot valide.
+- Les Privileged Gateway Intents (spécifiquement "Message Content Intent" et "Server Members Intent") doivent être activés sur le portail Discord Developer.
 
-## Installation and Deployment
+## Installation et Déploiement
 
-1. **Clone the repository**:
+1. **Cloner le répertoire** :
    ```bash
    git clone https://github.com/AliouneKane/hackhahunt.git
    cd hackhahunt
    ```
 
-2. **Create and activate a virtual environment** (recommended):
+2. **Créer et activer un environnement virtuel** (recommandé) :
    ```bash
    python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate  # Sous Windows : venv\Scripts\activate
    ```
 
-3. **Install the dependencies**:
+3. **Installer les dépendances** :
    ```bash
    pip install -r requirements.txt
    ```
-   *(If a separate `scraper/requirements.txt` exists for the scraping logic, install it as well: `pip install -r scraper/requirements.txt`)*
+   *(S'il y a un fichier `scraper/requirements.txt` séparé pour la logique de scraping, installez-le également : `pip install -r scraper/requirements.txt`)*
 
-4. **Environment Configuration**:
-   Create a `.env` file at the root of the project using the following template:
+4. **Configuration de l'environnement** :
+   Créez un fichier `.env` à la racine du projet en utilisant le modèle suivant :
    ```env
-   DISCORD_BOT_TOKEN=your_secret_token_here
-   GUILD_ID=123456789012345678              # The ID of your main Discord Server
-   HACKATHON_CHANNEL_ID=123456789012345678  # Channel where announcements will be posted
-   ARCHIVES_CHANNEL_ID=123456789012345678   # Channel where expired hackathons will be archived
+   DISCORD_BOT_TOKEN=votre_token_secret_ici
+   GUILD_ID=123456789012345678              # L'ID de votre serveur Discord principal
+   HACKATHON_CHANNEL_ID=123456789012345678  # Le canal où les annonces seront postées
+   ARCHIVES_CHANNEL_ID=123456789012345678   # Le canal où les hackathons expirés seront archivés
    ```
 
-5. **Database Initialization**:
-   The local SQLite database will automatically initialize upon the first launch and create all necessary tables (`hackahunt.db`).
+5. **Initialisation de la base de données** :
+   La base de données locale SQLite initialisera automatiquement et créera toutes les tables nécessaires (`hackahunt.db`) lors du premier lancement.
 
-6. **Run the bot locally**:
+6. **Lancer le bot localement** :
    ```bash
    python3 bot.py
    ```
-   *Once started, the bot will begin its background tasks, schedule its periodic scrapers, and configure the Discord event loops.*
+   *Une fois démarré, le bot commencera ses tâches en arrière-plan, programmera ses scrapers périodiques et configurera les événements Discord.*
 
-## Project Structure
+## Structure du Projet
 
-- `bot.py`: The main entry point for the Discord bot. It handles the connection, registers slash commands, and starts the asynchronous background loops.
-- `database.py`: Handles all SQLite database queries (saving hackathons, logging Discord message IDs, and managing team formations).
-- `/cogs/`: Contains modular Discord plugins separated by domain (`hackathons.py`, `matchmaking.py`, `teams.py`).
-- `/scraper/`: Houses the core data gathering logic and the orchestrator.
-  - `runner.py`: Executes the scraping tasks, saves records to the database, and slowly trickles posts into Discord via the batching system.
-  - `scorer.py`: Enforces localized quality control by attributing scores and filtering out irrelevant events.
-  - `devpost.py`, `mlh.py`, `zindi.py`, `drivendata.py`, etc.: Dedicated scrapers tailored to the formatting of each external platform.
+- `bot.py` : Le point d'entrée principal du bot Discord. Il gère la connexion, enregistre les commandes slash et lance les boucles asynchrones en arrière-plan.
+- `database.py` : Gère toutes les requêtes de la base de données SQLite (sauvegarde des hackathons, logs des ID de messages Discord et gestion des formations d'équipes).
+- `/cogs/` : Contient les plugins Discord modulaires séparés par domaine d'action (`hackathons.py`, `matchmaking.py`, `teams.py`).
+- `/scraper/` : Héberge la logique centrale de collecte de données et l'orchestrateur.
+  - `runner.py` : Exécute les tâches de scraping, sauvegarde les enregistrements dans la base de données, et publie progressivement les posts sur Discord via un système de lots.
+  - `scorer.py` : Applique un contrôle de qualité local en attribuant des scores et en filtrant les événements douteux ou non pertinents.
+  - `devpost.py`, `mlh.py`, `zindi.py`, `drivendata.py`, etc. : Des scrapers dédiés et adaptés au formatage spécifique de chaque plateforme externe.
 
-## Contributing
+## Contribuer
 
-Contributions are highly encouraged. Whether it is a minor typo fix or a major architectural improvement, please consider opening an issue on this repository and submitting a Pull Request describing your changes.
+Les contributions sont vivement encouragées ! Qu'il s'agisse d'une petite correction typographique ou d'une amélioration majeure de l'architecture, n'hésitez pas à ouvrir une *issue* sur ce dépôt ou à soumettre une *Pull Request* décrivant vos modifications.
 
-## License
+## Licence
 
-This project is open-source. Feel free to use it to build robust communities and great software.
+Ce projet est open-source. N'hésitez pas à l'utiliser pour construire des communautés solides et des applications innovantes.

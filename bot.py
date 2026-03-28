@@ -133,6 +133,82 @@ async def archive_now(interaction: discord.Interaction):
     else:
         await interaction.followup.send(f"✅ Action terminée ! **{count}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
 
+@bot.tree.command(name="test_archive", description="Crée un hackathon de test et l'archive automatiquement après N minutes (admin)")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(minutes="Délai avant archivage (défaut: 2 minutes)")
+async def test_archive(interaction: discord.Interaction, minutes: int = 5):
+    """Insère un hackathon fictif, le poste, puis l'archive quand la deadline arrive."""
+    await interaction.response.defer(ephemeral=True)
+
+    import os
+    from datetime import datetime, timedelta
+    from scraper.runner import build_embed
+
+    h_id_str = str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip()
+    if not h_id_str.isdigit() or int(h_id_str) == 0:
+        await interaction.followup.send("❌ `HACKATHON_CHANNEL_ID` invalide dans le .env.", ephemeral=True)
+        return
+
+    hack_channel = bot.get_channel(int(h_id_str)) or await bot.fetch_channel(int(h_id_str))
+    if not hack_channel:
+        await interaction.followup.send("❌ Impossible d'accéder au canal hackathons.", ephemeral=True)
+        return
+
+    # Deadline = maintenant + N minutes (format ISO lisible par dateparser)
+    deadline_dt = datetime.now() + timedelta(minutes=minutes)
+    deadline_str = deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    test_hack = {
+        "title": f"[TEST] Hackathon Fictif",
+        "url": f"https://example.com/test-hackathon-{int(datetime.now().timestamp())}",
+        "source": "test",
+        "theme": "Intelligence Artificielle, Data Science",
+        "format": "online",
+        "location": "",
+        "prize_1st": "500 000 FCFA",
+        "prize_2nd": "200 000 FCFA",
+        "prize_3rd": None,
+        "prize_min_fcfa": 500000,
+        "language": "fr",
+        "deadline": deadline_str,
+        "duration": None,
+        "level": "Intermédiaire",
+        "score": 7,
+    }
+
+    hack_id = db.insert_hackathon(test_hack)
+    if not hack_id:
+        await interaction.followup.send("❌ Impossible d'insérer le hackathon test (URL déjà existante ?).", ephemeral=True)
+        return
+
+    # Poster l'embed dans le canal hackathons
+    test_hack["id"] = hack_id
+    embed = build_embed(test_hack)
+    embed.description = f"⚠️ **Hackathon de test** — sera archivé dans **{minutes} minute(s)**."
+    msg = await hack_channel.send(embed=embed)
+    await msg.add_reaction("👍")
+
+    # Sauvegarder le message ID en base
+    db.update_message_id(hack_id, str(msg.id))
+
+    await interaction.followup.send(
+        f"✅ Hackathon de test créé (ID `{hack_id}`) et posté dans <#{h_id_str}>.\n"
+        f"⏳ Archivage automatique dans **{minutes} minute(s)** (`{deadline_str}`).",
+        ephemeral=True
+    )
+
+    # Tâche asynchrone : attendre la deadline puis archiver
+    async def _auto_archive():
+        from scraper.runner import archive_expired_hackathons
+        wait_seconds = (deadline_dt - datetime.now()).total_seconds()
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds + 2)  # +2s de marge
+        count = await archive_expired_hackathons(bot)
+        print(f"[test_archive] Archivage automatique déclenché → {count} hackathon(s) archivé(s).")
+
+    asyncio.create_task(_auto_archive())
+
+
 @bot.tree.command(name="diagnose", description="Diagnostique la configuration du bot et des canaux")
 async def diagnose(interaction: discord.Interaction):
     """Vérifie la config et les accès aux salons."""

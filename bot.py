@@ -37,6 +37,7 @@ async def on_ready():
     db.init_db()
     scraping_task.start()
     post_pending_task.start()
+    archive_expired_task.start()
 
 @tasks.loop(hours=6)
 async def scraping_task():
@@ -50,8 +51,15 @@ async def post_pending_task():
     from scraper.runner import post_pending_hackathons
     await post_pending_hackathons(bot, limit=10)
 
+@tasks.loop(hours=12)
+async def archive_expired_task():
+    """Archive les hackathons expirés une fois par jour."""
+    from scraper.runner import archive_expired_hackathons
+    await archive_expired_hackathons(bot)
+
 @scraping_task.before_loop
 @post_pending_task.before_loop
+@archive_expired_task.before_loop
 async def before_tasks():
     await bot.wait_until_ready()
 

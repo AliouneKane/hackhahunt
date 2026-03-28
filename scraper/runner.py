@@ -20,6 +20,7 @@ from scraper.scorer import filter_and_score
 
 HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
 ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
+GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 LEVEL_COLORS = {
     "Débutant":      0x1D9E75,
@@ -218,20 +219,26 @@ def build_embed(hack: dict) -> discord.Embed:
 
 async def archive_expired_hackathons(bot: discord.Client):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
-    hack_channel = bot.get_channel(HACKATHON_CHANNEL_ID)
+    guild = bot.get_guild(GUILD_ID)
+    if guild:
+        hack_channel = guild.get_channel(HACKATHON_CHANNEL_ID)
+        arch_channel = guild.get_channel(ARCHIVES_CHANNEL_ID)
+    else:
+        hack_channel = None
+        arch_channel = None
+
     if not hack_channel:
         try:
             hack_channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
-        except:
-            pass
+        except Exception as e:
+            print(f"  [Archive] Impossible de récupérer le canal hackathons (ID: {HACKATHON_CHANNEL_ID}) : {e}")
 
-    arch_channel = bot.get_channel(ARCHIVES_CHANNEL_ID)
     if not arch_channel:
         try:
             arch_channel = await bot.fetch_channel(ARCHIVES_CHANNEL_ID)
-        except:
-            pass
-    
+        except Exception as e:
+            print(f"  [Archive] Impossible de récupérer le canal archives (ID: {ARCHIVES_CHANNEL_ID}) : {e}")
+
     if not hack_channel or not arch_channel:
         print("Canal hackathons ou archives introuvable. Archivage ignoré.")
         return None

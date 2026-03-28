@@ -19,6 +19,7 @@ from scraper.drivendata import scrape_drivendata
 from scraper.scorer import filter_and_score
 
 HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
+ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 
 LEVEL_COLORS = {
     "Débutant":      0x1D9E75,
@@ -95,26 +96,61 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
         print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
         return 0
 
-    pending = db.get_unposted_hackathons(limit=limit)
-    if not pending:
-        return 0
-
-    print(f"🚀 Publication de {len(pending)} hackathons en attente...")
+    import dateparser
+    from datetime import datetime
+    
+    now = datetime.now()
     posted = 0
-    for hack in pending:
-        embed = build_embed(hack)
-        try:
-            msg = await channel.send(embed=embed)
-            await msg.add_reaction("👍")
-            await msg.add_reaction("❌")
-            db.update_message_id(hack["id"], str(msg.id))
-            posted += 1
-            await asyncio.sleep(2)
-        except Exception as e:
-            print(f"  Erreur envoi Discord : {e}")
+    total_posted = 0
+    
+    print(f"🚀 Publication de hackathons (Objectif: {limit})...")
+    
+    while total_posted < limit:
+        # Fetching remaining amount to reach limit
+        pending = db.get_unposted_hackathons(limit=min(10, limit - total_posted))
+        if not pending:
+            break
 
-    print(f"{posted} nouveaux hackathons postés sur Discord ce tour-ci !")
-    return posted
+        for hack in pending:
+            deadline_str = hack.get("deadline")
+            expired = False
+            
+            if deadline_str:
+                d_clean = deadline_str.replace("byOFA", "").strip()
+                if " - " in d_clean:
+                    d_clean = d_clean.split(" - ")[-1].strip()
+                elif "-" in d_clean and not deadline_str.startswith("202"):
+                    # If it's a range like Mar 21-28, 2026, we try to preserve year if needed, 
+                    # but simple split is a best effort.
+                    d_clean = d_clean.split("-")[-1].strip()
+                
+                parsed_date = dateparser.parse(d_clean, settings={'STRICT_PARSING': False})
+                if parsed_date:
+                    parsed_date = parsed_date.replace(tzinfo=None)
+                    if parsed_date < now:
+                        expired = True
+
+            if expired:
+                print(f"🗑️ Hackathon expiré supprimé : '{hack['title']}' (Deadline: {deadline_str})")
+                db.delete_hackathon(hack["id"])
+                continue
+
+            embed = build_embed(hack)
+            try:
+                msg = await channel.send(embed=embed)
+                await msg.add_reaction("👍")
+                await msg.add_reaction("❌")
+                db.update_message_id(hack["id"], str(msg.id))
+                total_posted += 1
+                await asyncio.sleep(2)
+            except Exception as e:
+                print(f"  Erreur envoi Discord : {e}")
+                
+            if total_posted >= limit:
+                break
+                
+    print(f"{total_posted} nouveaux hackathons postés sur Discord ce tour-ci !")
+    return total_posted
 
 
 def build_embed(hack: dict) -> discord.Embed:
@@ -178,3 +214,68 @@ def build_embed(hack: dict) -> discord.Embed:
         text=f"Score Hackahunt : {score}/10  {score_bar}  · Clique 👍 si tu es intéressé(e)"
     )
     return embed
+
+
+async def archive_expired_hackathons(bot: discord.Client):
+    """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
+    hack_channel = bot.get_channel(HACKATHON_CHANNEL_ID)
+    arch_channel = bot.get_channel(ARCHIVES_CHANNEL_ID)
+    
+    if not hack_channel or not arch_channel:
+        print("Canal hackathons ou archives introuvable. Archivage ignoré.")
+        return
+        
+    posted_hacks = db.get_posted_hackathons()
+    if not posted_hacks:
+        return
+        
+    import dateparser
+    from datetime import datetime
+    now = datetime.now()
+    archived_count = 0
+    
+    for hack in posted_hacks:
+        deadline_str = hack.get("deadline")
+        expired = False
+        
+        if deadline_str:
+            d_clean = deadline_str.replace("byOFA", "").strip()
+            if " - " in d_clean:
+                d_clean = d_clean.split(" - ")[-1].strip()
+            elif "-" in d_clean and not deadline_str.startswith("202"):
+                d_clean = d_clean.split("-")[-1].strip()
+            
+            parsed_date = dateparser.parse(d_clean, settings={'STRICT_PARSING': False})
+            if parsed_date:
+                parsed_date = parsed_date.replace(tzinfo=None)
+                if parsed_date < now:
+                    expired = True
+
+        if expired:
+            print(f"📦 Archivage de : {hack['title']}")
+            try:
+                # 1. Tenter de supprimer l'ancien message
+                if hack.get("discord_message_id"):
+                    try:
+                        old_msg = await hack_channel.fetch_message(int(hack["discord_message_id"]))
+                        await old_msg.delete()
+                    except discord.NotFound:
+                        pass # Le message était peut-être déjà supprimé
+                        
+                # 2. Poster dans les archives
+                embed = build_embed(hack)
+                embed.color = discord.Color.dark_grey() # Griser l'archive
+                embed.set_footer(text=f"Score: {hack.get('score', 0)}/10 · Hackathon Terminé / Archivé")
+                
+                await arch_channel.send(content="**[ARCHIVE]**", embed=embed)
+                
+                # 3. Mettre à jour en BDD
+                db.archive_hackathon(hack["id"])
+                archived_count += 1
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                print(f"Erreur lors de l'archivage de {hack['title']} : {e}")
+
+    if archived_count > 0:
+        print(f"✅ {archived_count} hackathons ont été archivés.")

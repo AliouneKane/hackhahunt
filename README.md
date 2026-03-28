@@ -14,11 +14,11 @@ HackaHunt is a comprehensive Discord bot designed to automate the discovery of h
 - **Intelligent Filtering and Scoring**: Automatically filters out irrelevant themes and ranks hackathons based on predefined quality criteria. Only events meeting a strict scoring threshold are retained.
 - **Smart Paced Announcements**: To prevent notification spam, the bot implements a queued posting system. It saves all discovered hackathons silently and broadcasts a maximum of 10 new announcements per hour to the selected channel.
 - **Discord Rich Embeds**: Detailed presentation of crucial information, including prize pools (1st, 2nd, 3rd places, or overall prize values), participation formats (100% online, in-person, hybrid), location, and expected team sizes (typically 1 to 4 members).
+- **Automated Deadline Management**: The bot uses `dateparser` to actively monitor registration deadlines. It automatically screens out hackathons that have already expired during the scraping process to prevent database clutter. For hackathons already posted, expired events are strictly moved to an archive channel to maintain the clarity of the main announcements channel.
 - **Matchmaking and Team Management**:
   - Users can react with a specific emoji on an announcement to enter a matchmaking queue.
   - The bot dynamically provisions private Discord text channels for newly matched teams to coordinate.
   - Automatic private message notifications are sent to team members.
-- **Automated Deadline Reminders**: The bot actively monitors registration deadlines and alerts team members at D-7, D-3, and D-1. Expired hackathons are automatically archived to maintain channel clarity.
 
 ## Prerequisites
 

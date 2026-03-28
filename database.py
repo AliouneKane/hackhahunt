@@ -145,6 +145,29 @@ def get_unposted_hackathons(limit: int = 10) -> list:
     conn.close()
     return [dict(r) for r in rows]
 
+def get_posted_hackathons() -> list:
+    """Récupère les hackathons déjà publiés sur Discord et encore actifs"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM hackathons WHERE discord_message_id IS NOT NULL AND status = 'active'"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def delete_hackathon(hackathon_id: int):
+    """Supprime un hackathon de la base de données (si le délai est dépassé avant publication)"""
+    conn = get_connection()
+    conn.execute("DELETE FROM hackathons WHERE id = ?", (hackathon_id,))
+    conn.commit()
+    conn.close()
+
+def archive_hackathon(hackathon_id: int):
+    """Marque un hackathon comme archivé et supprime son message ID"""
+    conn = get_connection()
+    conn.execute("UPDATE hackathons SET status = 'archived' WHERE id = ?", (hackathon_id,))
+    conn.commit()
+    conn.close()
+
 def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn = get_connection()
     row = conn.execute(

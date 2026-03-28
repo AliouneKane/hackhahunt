@@ -219,28 +219,38 @@ def build_embed(hack: dict) -> discord.Embed:
 
 async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild = None):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
-    if guild is None:
-        guild = bot.get_guild(GUILD_ID)
+    
+    # Nettoyage des IDs (gestion des espaces invisibles dans le .env)
+    h_str = str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip()
+    a_str = str(os.getenv("ARCHIVES_CHANNEL_ID", "0")).strip()
+    
+    h_id = int(h_str) if h_str.isdigit() else 0
+    a_id = int(a_str) if a_str.isdigit() else 0
 
-    print(f"  [Archive] guild={guild} | hack_id={HACKATHON_CHANNEL_ID} | arch_id={ARCHIVES_CHANNEL_ID}")
+    hack_channel = None
+    arch_channel = None
 
-    hack_channel = guild.get_channel(HACKATHON_CHANNEL_ID) if guild else None
-    arch_channel = guild.get_channel(ARCHIVES_CHANNEL_ID) if guild else None
-
-    if not hack_channel:
-        try:
-            hack_channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
-        except Exception as e:
-            print(f"  [Archive] Impossible de récupérer le canal hackathons (ID: {HACKATHON_CHANNEL_ID}) : {e}")
-
-    if not arch_channel:
-        try:
-            arch_channel = await bot.fetch_channel(ARCHIVES_CHANNEL_ID)
-        except Exception as e:
-            print(f"  [Archive] Impossible de récupérer le canal archives (ID: {ARCHIVES_CHANNEL_ID}) : {e}")
-
+    if h_id != 0:
+        hack_channel = bot.get_channel(h_id)
+        if not hack_channel:
+            try:
+                hack_channel = await bot.fetch_channel(h_id)
+            except:
+                print(f"⚠️ [Archive] Impossible de fetch HACKATHON_CHANNEL_ID: {h_id}")
+    
+    if a_id != 0:
+        arch_channel = bot.get_channel(a_id)
+        if not arch_channel:
+            try:
+                arch_channel = await bot.fetch_channel(a_id)
+                print(f"  [Archive] Canal Archives trouvé par fetch (ID: {a_id})")
+            except Exception as e:
+                print(f"  [Archive] Erreur fetch arch_channel (ID {a_id}) : {e}")
+    else:
+        print("  [Archive] ARCHIVES_CHANNEL_ID est à 0 dans le .env !")
+    
     if not hack_channel or not arch_channel:
-        print("Canal hackathons ou archives introuvable. Archivage ignoré.")
+        print(f"❌ [Archive] Canal manquant. Hack: {hack_channel}, Arch: {arch_channel}")
         return None
         
     posted_hacks = db.get_posted_hackathons()

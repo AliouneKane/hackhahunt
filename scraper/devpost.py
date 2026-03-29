@@ -55,6 +55,9 @@ def _parse_item(item: dict) -> Optional[dict]:
         url = item.get("url", "")
         if not url:
             return None
+        # L'API Devpost peut retourner des URLs relatives (/d/online/hackathon/...)
+        if url and not url.startswith("http"):
+            url = "https://devpost.com" + url
 
         # Localisation et format
         location_info = item.get("displayed_location", {})

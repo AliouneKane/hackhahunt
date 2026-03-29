@@ -235,7 +235,14 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10, guild=No
                 db.delete_hackathon(hack["id"])
                 continue
 
-            # ── 2. Anti-doublon : vérifier si ce titre est déjà dans le canal ──
+            # ── 2. URL valide (http/https obligatoire pour Discord) ──
+            url = hack.get("url", "")
+            if url and not url.startswith("http"):
+                print(f"🔗 URL invalide, supprimé : '{hack['title']}' (url: {url})")
+                db.delete_hackathon(hack["id"])
+                continue
+
+            # ── 3. Anti-doublon : vérifier si ce titre est déjà dans le canal ──
             title_clean = hack.get("title", "").strip().lower()
             if title_clean in existing_titles:
                 print(f"⏭️ Doublon ignoré (déjà dans le canal) : '{hack['title']}'")
@@ -296,7 +303,10 @@ def build_embed(hack: dict) -> discord.Embed:
     source_label = hack.get("source", "").capitalize()
     title = f"{hack['title']} — {source_label}"
 
-    embed = discord.Embed(title=title, url=hack.get("url", ""), color=color)
+    url = hack.get("url", "")
+    if url and not url.startswith("http"):
+        url = ""
+    embed = discord.Embed(title=title, url=url or None, color=color)
 
     if hack.get("theme"):
         embed.add_field(name="Thème", value=hack["theme"][:200], inline=False)

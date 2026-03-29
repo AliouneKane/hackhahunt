@@ -8,6 +8,7 @@ Surveille **12 plateformes** en continu, filtre les hackathons par qualité et p
 
 - **Scraping multi-plateformes** — Devpost, MLH, Kaggle, Zindi, DrivenData, Eventbrite, ChallengeData, Challengerocket, Hackmakers, A2SV, Geekulcha, OpportunitiesAfrica
 - **Scoring automatique** — chaque hackathon est noté 0/10 selon la pertinence du thème, la géographie, la langue et la source
+- **URLs validées** — les URLs relatives (Devpost, etc.) sont corrigées avant insertion et envoi Discord
 - **Anti-spam** — file d'attente diffusant max 10 annonces/heure
 - **Archivage automatique** — les hackathons expirés sont déplacés dans #archives
 - **Rappels deadline** — notifications J-7, J-3, J-1 dans les salons d'équipe

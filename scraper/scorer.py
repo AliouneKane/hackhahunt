@@ -7,84 +7,226 @@ Profil cible : ingénieurs statisticiens économistes (ENSAE Dakar)
 # ── Mots-clés par priorité thématique ────────────────────────────────────────
 
 THEMES_HIGH = [
-    "data science", "machine learning", "artificial intelligence", "intelligence artificielle",
-    "deep learning", "neural network", "nlp", "natural language", "computer vision",
-    "predictive", "prédictif", "modélisation", "forecasting", "classification",
-    "regression", "régression", "clustering", "anomaly detection",
-    "statistics", "statistique", "econometrics", "économétrie", "panel data",
-    "time series", "séries temporelles", "causal inference", "inference causale",
-    "survey", "enquête", "indicateurs", "indices",
-    "fintech", "finance", "financial", "banking", "banque", "microfinance",
-    "economic", "économique", "economy", "économie", "poverty", "pauvreté",
-    "inequality", "inégalité", "gdp", "pib", "fiscal", "monetary",
-    "health", "santé", "epidemiology", "épidémiologie", "public health",
-    "disease", "maladie", "mortality", "mortalité", "healthcare",
-    "climate data", "climate change", "données climatiques", "energy",
-    "renewable", "carbon", "emissions",
+    "data science",
+    "machine learning",
+    "artificial intelligence",
+    "intelligence artificielle",
+    "deep learning",
+    "neural network",
+    "nlp",
+    "natural language",
+    "computer vision",
+    "predictive",
+    "prédictif",
+    "modélisation",
+    "forecasting",
+    "classification",
+    "regression",
+    "régression",
+    "clustering",
+    "anomaly detection",
+    "statistics",
+    "statistique",
+    "econometrics",
+    "économétrie",
+    "panel data",
+    "time series",
+    "séries temporelles",
+    "causal inference",
+    "inference causale",
+    "survey",
+    "enquête",
+    "indicateurs",
+    "indices",
+    "fintech",
+    "finance",
+    "financial",
+    "banking",
+    "banque",
+    "microfinance",
+    "economic",
+    "économique",
+    "economy",
+    "économie",
+    "poverty",
+    "pauvreté",
+    "inequality",
+    "inégalité",
+    "gdp",
+    "pib",
+    "fiscal",
+    "monetary",
+    "health",
+    "santé",
+    "epidemiology",
+    "épidémiologie",
+    "public health",
+    "disease",
+    "maladie",
+    "mortality",
+    "mortalité",
+    "healthcare",
+    "climate data",
+    "climate change",
+    "données climatiques",
+    "energy",
+    "renewable",
+    "carbon",
+    "emissions",
 ]
 
 THEMES_MEDIUM = [
-    "agriculture", "agritech", "farming", "food security", "sécurité alimentaire",
-    "govtech", "government", "open data", "données publiques", "civic",
-    "smart city", "urban", "mobility", "transport", "logistics",
-    "education", "edtech", "learning",
-    "supply chain", "e-commerce",
+    "agriculture",
+    "agritech",
+    "farming",
+    "food security",
+    "sécurité alimentaire",
+    "govtech",
+    "government",
+    "open data",
+    "données publiques",
+    "civic",
+    "smart city",
+    "urban",
+    "mobility",
+    "transport",
+    "logistics",
+    "education",
+    "edtech",
+    "learning",
+    "supply chain",
+    "e-commerce",
 ]
 
 THEMES_LOW = [
-    "web", "mobile", "app", "application", "platform", "cybersecurity",
-    "security", "blockchain", "open innovation", "entrepreneurship",
-    "startup", "social impact",
+    "web",
+    "mobile",
+    "app",
+    "application",
+    "platform",
+    "cybersecurity",
+    "security",
+    "blockchain",
+    "open innovation",
+    "entrepreneurship",
+    "startup",
+    "social impact",
 ]
 
 THEMES_EXCLUDED = [
-    "game", "gaming", "gamedev", "game development",
-    "graphic design", "illustration", "fashion",
-    "hardware only", "robotics only",
+    "game",
+    "gaming",
+    "gamedev",
+    "game development",
+    "graphic design",
+    "illustration",
+    "fashion",
+    "hardware only",
+    "robotics only",
 ]
 
 LEVEL_BEGINNER = [
-    "beginner", "débutant", "no coding", "no experience", "no technical",
-    "no code", "everyone", "tout le monde", "open to all", "ouvert à tous",
-    "ideathon", "idéation", "pitch", "no prior",
+    "beginner",
+    "débutant",
+    "no coding",
+    "no experience",
+    "no technical",
+    "no code",
+    "everyone",
+    "tout le monde",
+    "open to all",
+    "ouvert à tous",
+    "ideathon",
+    "idéation",
+    "pitch",
+    "no prior",
 ]
 
 LEVEL_INTERMEDIATE = [
-    "python", "r programming", "sql", "data analysis", "analyse de données",
-    "machine learning basics", "api", "rest api", "basic ml",
-    "undergraduate", "étudiant", "student",
+    "python",
+    "r programming",
+    "sql",
+    "data analysis",
+    "analyse de données",
+    "machine learning basics",
+    "api",
+    "rest api",
+    "basic ml",
+    "undergraduate",
+    "étudiant",
+    "student",
 ]
 
 LEVEL_ADVANCED = [
-    "deep learning", "nlp", "large language model", "llm", "transformer",
-    "computer vision", "reinforcement learning", "time series forecasting",
-    "causal inference", "econometric model", "structural model",
-    "optimization", "big data", "spark", "distributed",
-    "advanced", "avancé", "expert",
+    "deep learning",
+    "nlp",
+    "large language model",
+    "llm",
+    "transformer",
+    "computer vision",
+    "reinforcement learning",
+    "time series forecasting",
+    "causal inference",
+    "econometric model",
+    "structural model",
+    "optimization",
+    "big data",
+    "spark",
+    "distributed",
+    "advanced",
+    "avancé",
+    "expert",
 ]
 
 LEVEL_RESEARCH = [
-    "phd", "doctoral", "research paper", "publication", "peer review",
-    "academic", "académique", "jury académique", "scientific committee",
-    "workshop paper", "proceedings", "arxiv",
+    "phd",
+    "doctoral",
+    "research paper",
+    "publication",
+    "peer review",
+    "academic",
+    "académique",
+    "jury académique",
+    "scientific committee",
+    "workshop paper",
+    "proceedings",
+    "arxiv",
 ]
 
 GEO_AFRICA = [
-    "africa", "afrique", "african", "africain",
-    "senegal", "sénégal", "dakar",
-    "nigeria", "kenya", "ghana", "côte d'ivoire", "ivory coast",
-    "rwanda", "ethiopia", "tanzania", "morocco", "maroc",
-    "west africa", "afrique de l'ouest", "sub-saharan", "subsaharienne",
+    "africa",
+    "afrique",
+    "african",
+    "africain",
+    "senegal",
+    "sénégal",
+    "dakar",
+    "nigeria",
+    "kenya",
+    "ghana",
+    "côte d'ivoire",
+    "ivory coast",
+    "rwanda",
+    "ethiopia",
+    "tanzania",
+    "morocco",
+    "maroc",
+    "west africa",
+    "afrique de l'ouest",
+    "sub-saharan",
+    "subsaharienne",
 ]
 
 
 def score_hackathon(hack: dict) -> dict:
-    text = " ".join([
-        hack.get("title", ""),
-        hack.get("theme", ""),
-        hack.get("location", ""),
-        hack.get("format", ""),
-    ]).lower()
+    text = " ".join(
+        [
+            hack.get("title", ""),
+            hack.get("theme", ""),
+            hack.get("location", ""),
+            hack.get("format", ""),
+        ]
+    ).lower()
 
     score = 0
     skip = False
@@ -160,17 +302,27 @@ def _detect_level(text: str) -> str:
 
 def filter_and_score(hackathons: list) -> list:
     results = []
+    seen_titles = set()
     skipped = 0
     low_score = 0
+    duplicates = 0
     for hack in hackathons:
         scored = score_hackathon(hack)
         if scored["skip"]:
             skipped += 1
             continue
         if scored["score"] >= 3:  # Seuil basé de 5 à 3 pour capturer plus de hackathons
+            # Dédoublonnage par titre (insensible à la casse)
+            title_key = (scored.get("title") or "").strip().lower()
+            if title_key in seen_titles:
+                duplicates += 1
+                continue
+            seen_titles.add(title_key)
             results.append(scored)
         else:
             low_score += 1
     results.sort(key=lambda h: h["score"], reverse=True)
-    print(f"  [Scorer] {len(results)} hackathons retenus, {skipped} exclus (thème hors profil), {low_score} score trop bas")
+    print(
+        f"  [Scorer] {len(results)} hackathons retenus, {skipped} exclus (thème hors profil), {low_score} score trop bas, {duplicates} doublons éliminés"
+    )
     return results

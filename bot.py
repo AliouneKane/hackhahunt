@@ -210,7 +210,7 @@ async def _initial_run():
         # Poster les hackathons en attente immédiatement
         guild = discord.utils.get(bot.guilds, id=GUILD_ID)
         if guild:
-            posted = await post_pending_hackathons(bot, limit=10, guild=guild)
+            posted = await post_pending_hackathons(bot, limit=1, guild=guild)
             print(f"✅ Initial run terminé : {posted} hackathon(s) posté(s)")
         else:
             print(
@@ -256,9 +256,9 @@ async def scraping_task():
         traceback.print_exc()
 
 
-@tasks.loop(hours=1)
+@tasks.loop(minutes=5)
 async def post_pending_task():
-    """Poste 10 hackathons par heure pour éviter le spam."""
+    """Poste 1 hackathon toutes les 5 minutes pour tester l'automatisation."""
     try:
         from scraper.runner import post_pending_hackathons
 
@@ -272,10 +272,12 @@ async def post_pending_task():
                 f"Guilds visibles : `{[g.id for g in bot.guilds]}`"
             )
             return
-        posted = await post_pending_hackathons(bot, limit=10, guild=guild)
+        posted = await post_pending_hackathons(bot, limit=1, guild=guild)
         stats = db.get_stats()
         pending = stats["total_pending"]
-        print(f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s), {pending} en attente")
+        print(
+            f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s), {pending} en attente"
+        )
         if posted == 0 and pending > 0:
             await _notify_admin(
                 f"⚠️ **[post_pending_task]** 0 hackathon posté alors que "

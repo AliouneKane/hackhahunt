@@ -50,13 +50,15 @@ async def scraping_task():
 async def post_pending_task():
     """Poste 10 hackathons par heure pour éviter le spam."""
     from scraper.runner import post_pending_hackathons
-    await post_pending_hackathons(bot, limit=10)
+    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+    await post_pending_hackathons(bot, limit=10, guild=guild)
 
 @tasks.loop(hours=12)
 async def archive_expired_task():
-    """Archive les hackathons expirés une fois par jour."""
+    """Archive les hackathons expirés toutes les 12h."""
     from scraper.runner import archive_expired_hackathons
-    await archive_expired_hackathons(bot)
+    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+    await archive_expired_hackathons(bot, guild=guild)
 
 @scraping_task.before_loop
 @post_pending_task.before_loop

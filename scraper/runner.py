@@ -53,6 +53,12 @@ SCRAPERS = [
 
 
 async def run_all_scrapers(bot: discord.Client):
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+    global HACKATHON_CHANNEL_ID, ARCHIVES_CHANNEL_ID
+    HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
+    ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
+
     print("Démarrage du scraping — 12 sources...")
     all_raw = []
     source_stats = {}
@@ -95,6 +101,11 @@ async def run_all_scrapers(bot: discord.Client):
 
 async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
     """Poste une poignée de hackathons encore non publiés pour éviter de spammer."""
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+    global HACKATHON_CHANNEL_ID
+    HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
+
     channel = bot.get_channel(HACKATHON_CHANNEL_ID)
     if not channel:
         try:
@@ -228,7 +239,9 @@ def build_embed(hack: dict) -> discord.Embed:
 
 async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild = None):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
-    
+    from dotenv import load_dotenv
+    load_dotenv(override=True)  # Recharger le .env à chaque appel
+
     # Nettoyage des IDs (gestion des espaces invisibles dans le .env)
     h_str = str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip()
     a_str = str(os.getenv("ARCHIVES_CHANNEL_ID", "0")).strip()

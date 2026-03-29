@@ -5,10 +5,12 @@ from typing import Optional
 
 DB_PATH = "hackahunt.db"
 
+
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_connection()
@@ -89,6 +91,15 @@ def init_db():
         )
     """)
 
+    # Table des membres ayant reçu le message de bienvenue
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS welcomed (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            discord_user_id TEXT UNIQUE NOT NULL,
+            welcomed_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     # Colonnes ajoutées après la création initiale (migration douce)
     for col, definition in [
         ("discord_posted_at", "TEXT"),
@@ -103,6 +114,7 @@ def init_db():
     conn.close()
     print("✅ Base de données initialisée")
 
+
 # ── Hackathons ────────────────────────────────────────────────────────────────
 def insert_hackathon(data: dict) -> Optional[int]:
     conn = get_connection()
@@ -112,24 +124,37 @@ def insert_hackathon(data: dict) -> Optional[int]:
         title = (data.get("title") or "").strip()
         if title:
             existing = c.execute(
-                "SELECT id FROM hackathons WHERE LOWER(TRIM(title)) = LOWER(?)", (title,)
+                "SELECT id FROM hackathons WHERE LOWER(TRIM(title)) = LOWER(?)",
+                (title,),
             ).fetchone()
             if existing:
                 return None  # Même titre déjà en base
-        c.execute("""
+        c.execute(
+            """
             INSERT INTO hackathons
             (title, url, source, theme, format, location, prize_1st, prize_2nd,
              prize_3rd, prize_min_fcfa, language, deadline, duration, level, score, posted_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data.get("title"), data.get("url"), data.get("source"),
-            data.get("theme"), data.get("format"), data.get("location"),
-            data.get("prize_1st"), data.get("prize_2nd"), data.get("prize_3rd"),
-            data.get("prize_min_fcfa", 0), data.get("language"),
-            data.get("deadline"), data.get("duration"),
-            data.get("level"), data.get("score"),
-            datetime.now().isoformat()
-        ))
+        """,
+            (
+                data.get("title"),
+                data.get("url"),
+                data.get("source"),
+                data.get("theme"),
+                data.get("format"),
+                data.get("location"),
+                data.get("prize_1st"),
+                data.get("prize_2nd"),
+                data.get("prize_3rd"),
+                data.get("prize_min_fcfa", 0),
+                data.get("language"),
+                data.get("deadline"),
+                data.get("duration"),
+                data.get("level"),
+                data.get("score"),
+                datetime.now().isoformat(),
+            ),
+        )
         conn.commit()
         return c.lastrowid
     except sqlite3.IntegrityError:
@@ -137,14 +162,16 @@ def insert_hackathon(data: dict) -> Optional[int]:
     finally:
         conn.close()
 
+
 def update_message_id(hackathon_id: int, message_id: str):
     conn = get_connection()
     conn.execute(
         "UPDATE hackathons SET discord_message_id = ?, discord_posted_at = ? WHERE id = ?",
-        (message_id, datetime.now().isoformat(), hackathon_id)
+        (message_id, datetime.now().isoformat(), hackathon_id),
     )
     conn.commit()
     conn.close()
+
 
 def get_active_hackathons() -> list:
     conn = get_connection()
@@ -154,14 +181,17 @@ def get_active_hackathons() -> list:
     conn.close()
     return [dict(r) for r in rows]
 
+
 def get_unposted_hackathons(limit: int = 10) -> list:
     """Récupère les hackathons non encore publiés sur Discord"""
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM hackathons WHERE discord_message_id IS NULL AND status = 'active' ORDER BY score DESC, id ASC LIMIT ?", (limit,)
+        "SELECT * FROM hackathons WHERE discord_message_id IS NULL AND status = 'active' ORDER BY score DESC, id ASC LIMIT ?",
+        (limit,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
 
 def get_posted_hackathons() -> list:
     """Récupère les hackathons déjà publiés sur Discord et encore actifs"""
@@ -172,6 +202,7 @@ def get_posted_hackathons() -> list:
     conn.close()
     return [dict(r) for r in rows]
 
+
 def delete_hackathon(hackathon_id: int):
     """Supprime un hackathon de la base de données (si le délai est dépassé avant publication)"""
     conn = get_connection()
@@ -179,12 +210,13 @@ def delete_hackathon(hackathon_id: int):
     conn.commit()
     conn.close()
 
+
 def archive_hackathon(hackathon_id: int):
     """Marque un hackathon comme archivé"""
     conn = get_connection()
     conn.execute(
         "UPDATE hackathons SET status = 'archived', archived_at = ? WHERE id = ?",
-        (datetime.now().isoformat(), hackathon_id)
+        (datetime.now().isoformat(), hackathon_id),
     )
     conn.commit()
     conn.close()
@@ -195,25 +227,40 @@ def get_stats() -> dict:
     conn = get_connection()
     today = datetime.now().strftime("%Y-%m-%d")
 
-    total_active   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active'").fetchone()[0]
-    total_pending  = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NULL").fetchone()[0]
-    total_posted   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NOT NULL").fetchone()[0]
-    total_archived = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'archived'").fetchone()[0]
+    total_active = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE status = 'active'"
+    ).fetchone()[0]
+    total_pending = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NULL"
+    ).fetchone()[0]
+    total_posted = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NOT NULL"
+    ).fetchone()[0]
+    total_archived = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE status = 'archived'"
+    ).fetchone()[0]
 
-    scraped_today  = conn.execute("SELECT COUNT(*) FROM hackathons WHERE posted_at LIKE ?", (f"{today}%",)).fetchone()[0]
-    posted_today   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE discord_posted_at LIKE ?", (f"{today}%",)).fetchone()[0]
-    archived_today = conn.execute("SELECT COUNT(*) FROM hackathons WHERE archived_at LIKE ?", (f"{today}%",)).fetchone()[0]
+    scraped_today = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE posted_at LIKE ?", (f"{today}%",)
+    ).fetchone()[0]
+    posted_today = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE discord_posted_at LIKE ?", (f"{today}%",)
+    ).fetchone()[0]
+    archived_today = conn.execute(
+        "SELECT COUNT(*) FROM hackathons WHERE archived_at LIKE ?", (f"{today}%",)
+    ).fetchone()[0]
 
     conn.close()
     return {
-        "total_active":   total_active,
-        "total_pending":  total_pending,
-        "total_posted":   total_posted,
+        "total_active": total_active,
+        "total_pending": total_pending,
+        "total_posted": total_posted,
         "total_archived": total_archived,
-        "scraped_today":  scraped_today,
-        "posted_today":   posted_today,
+        "scraped_today": scraped_today,
+        "posted_today": posted_today,
         "archived_today": archived_today,
     }
+
 
 def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn = get_connection()
@@ -223,13 +270,14 @@ def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn.close()
     return dict(row) if row else None
 
+
 # ── Intérêts ─────────────────────────────────────────────────────────────────
 def add_interest(hackathon_id: int, user_id: str, username: str):
     conn = get_connection()
     try:
         conn.execute(
             "INSERT INTO interests (hackathon_id, discord_user_id, discord_username) VALUES (?, ?, ?)",
-            (hackathon_id, user_id, username)
+            (hackathon_id, user_id, username),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -237,23 +285,26 @@ def add_interest(hackathon_id: int, user_id: str, username: str):
     finally:
         conn.close()
 
+
 def remove_interest(hackathon_id: int, user_id: str):
     conn = get_connection()
     conn.execute(
         "DELETE FROM interests WHERE hackathon_id = ? AND discord_user_id = ?",
-        (hackathon_id, user_id)
+        (hackathon_id, user_id),
     )
     conn.commit()
     conn.close()
+
 
 def get_interested_users(hackathon_id: int) -> list:
     conn = get_connection()
     rows = conn.execute(
         "SELECT discord_user_id, discord_username FROM interests WHERE hackathon_id = ?",
-        (hackathon_id,)
+        (hackathon_id,),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
 
 # ── Votes de matchmaking ──────────────────────────────────────────────────────
 def add_vote(hackathon_id: int, voter_id: str, target_id: str):
@@ -261,7 +312,7 @@ def add_vote(hackathon_id: int, voter_id: str, target_id: str):
     try:
         conn.execute(
             "INSERT INTO votes (hackathon_id, voter_id, target_id) VALUES (?, ?, ?)",
-            (hackathon_id, voter_id, target_id)
+            (hackathon_id, voter_id, target_id),
         )
         conn.commit()
     except sqlite3.IntegrityError:
@@ -269,55 +320,65 @@ def add_vote(hackathon_id: int, voter_id: str, target_id: str):
     finally:
         conn.close()
 
+
 def check_mutual_match(hackathon_id: int, user_a: str, user_b: str) -> bool:
     conn = get_connection()
     a_voted_b = conn.execute(
         "SELECT 1 FROM votes WHERE hackathon_id=? AND voter_id=? AND target_id=?",
-        (hackathon_id, user_a, user_b)
+        (hackathon_id, user_a, user_b),
     ).fetchone()
     b_voted_a = conn.execute(
         "SELECT 1 FROM votes WHERE hackathon_id=? AND voter_id=? AND target_id=?",
-        (hackathon_id, user_b, user_a)
+        (hackathon_id, user_b, user_a),
     ).fetchone()
     conn.close()
     return bool(a_voted_b and b_voted_a)
+
 
 def get_user_votes(hackathon_id: int, voter_id: str) -> list:
     conn = get_connection()
     rows = conn.execute(
         "SELECT target_id FROM votes WHERE hackathon_id=? AND voter_id=?",
-        (hackathon_id, voter_id)
+        (hackathon_id, voter_id),
     ).fetchall()
     conn.close()
     return [r["target_id"] for r in rows]
 
+
 # ── Équipes ───────────────────────────────────────────────────────────────────
-def create_team(hackathon_id: int, member_ids: list, channel_id: str, channel_name: str) -> int:
+def create_team(
+    hackathon_id: int, member_ids: list, channel_id: str, channel_name: str
+) -> int:
     conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO teams (hackathon_id, channel_id, channel_name) VALUES (?, ?, ?)",
-        (hackathon_id, channel_id, channel_name)
+        (hackathon_id, channel_id, channel_name),
     )
     team_id = c.lastrowid
     for uid in member_ids:
         c.execute(
             "INSERT OR IGNORE INTO team_members (team_id, discord_user_id) VALUES (?, ?)",
-            (team_id, uid)
+            (team_id, uid),
         )
     conn.commit()
     conn.close()
     return team_id
 
+
 def get_user_team(hackathon_id: int, user_id: str) -> Optional[dict]:
     conn = get_connection()
-    row = conn.execute("""
+    row = conn.execute(
+        """
         SELECT t.* FROM teams t
         JOIN team_members tm ON t.id = tm.team_id
         WHERE t.hackathon_id = ? AND tm.discord_user_id = ?
-    """, (hackathon_id, user_id)).fetchone()
+    """,
+        (hackathon_id, user_id),
+    ).fetchone()
     conn.close()
     return dict(row) if row else None
+
 
 def get_team_members(team_id: int) -> list:
     conn = get_connection()
@@ -327,18 +388,52 @@ def get_team_members(team_id: int) -> list:
     conn.close()
     return [r["discord_user_id"] for r in rows]
 
+
 def get_open_teams(hackathon_id: int, max_size: int) -> list:
     conn = get_connection()
-    rows = conn.execute("""
+    rows = conn.execute(
+        """
         SELECT t.id, t.channel_id, t.channel_name, COUNT(tm.id) as member_count
         FROM teams t
         JOIN team_members tm ON t.id = tm.team_id
         WHERE t.hackathon_id = ? AND t.status = 'active'
         GROUP BY t.id
         HAVING member_count < ?
-    """, (hackathon_id, max_size)).fetchall()
+    """,
+        (hackathon_id, max_size),
+    ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ── Bienvenue ─────────────────────────────────────────────────────────────────
+def is_welcomed(user_id: str) -> bool:
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT 1 FROM welcomed WHERE discord_user_id = ?", (user_id,)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def mark_welcomed(user_id: str):
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO welcomed (discord_user_id) VALUES (?)", (user_id,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_not_welcomed_user_ids() -> list:
+    """Retourne les IDs des membres du serveur qui n'ont jamais reçu le welcome."""
+    conn = get_connection()
+    rows = conn.execute("SELECT discord_user_id FROM welcomed").fetchall()
+    conn.close()
+    return [r["discord_user_id"] for r in rows]
+
 
 if __name__ == "__main__":
     init_db()

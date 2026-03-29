@@ -223,6 +223,23 @@ async def _initial_run():
         traceback.print_exc()
 
 
+async def _notify_admin(message: str):
+    """Envoie un MP à l'admin (propriétaire du serveur) en cas de problème."""
+    try:
+        guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+        if not guild:
+            print(f"[_notify_admin] Guild {GUILD_ID} introuvable, notification ignorée")
+            return
+        owner = guild.owner or await guild.fetch_member(guild.owner_id)
+        if owner:
+            await owner.send(f"🤖 **HackaHunt — Alerte**\n\n{message}")
+            print(f"[_notify_admin] MP envoyé à {owner.display_name}")
+    except discord.Forbidden:
+        print("[_notify_admin] MP bloqué (admin a ses MP fermés)")
+    except Exception as e:
+        print(f"[_notify_admin] Erreur envoi MP : {e}")
+
+
 @tasks.loop(hours=6)
 async def scraping_task():
     """Scraping automatique toutes les 6h"""
@@ -249,14 +266,29 @@ async def post_pending_task():
         guild = discord.utils.get(bot.guilds, id=GUILD_ID)
         if not guild:
             print(f"❌ [post_pending_task] Guild {GUILD_ID} introuvable")
+            await _notify_admin(
+                "❌ **[post_pending_task]** Guild introuvable.\n"
+                f"GUILD_ID configuré : `{GUILD_ID}`\n"
+                f"Guilds visibles : `{[g.id for g in bot.guilds]}`"
+            )
             return
         posted = await post_pending_hackathons(bot, limit=10, guild=guild)
-        print(f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s)")
+        stats = db.get_stats()
+        pending = stats["total_pending"]
+        print(f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s), {pending} en attente")
+        if posted == 0 and pending > 0:
+            await _notify_admin(
+                f"⚠️ **[post_pending_task]** 0 hackathon posté alors que "
+                f"**{pending}** sont en attente.\n"
+                f"Cause probable : URLs invalides, canal introuvable, ou tous filtrés.\n"
+                f"Utilise `/diagnose` et `/stats` pour vérifier."
+            )
     except Exception as e:
         print(f"❌ [post_pending_task] Erreur : {e}")
         import traceback
 
         traceback.print_exc()
+        await _notify_admin(f"❌ **[post_pending_task]** Exception :\n```\n{e}\n```")
 
 
 @tasks.loop(hours=12)

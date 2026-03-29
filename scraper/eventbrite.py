@@ -39,6 +39,8 @@ def scrape_eventbrite() -> list:
 
                     link_el = card.select_one("a[href]")
                     card_url = link_el["href"] if link_el else None
+                    if card_url and not card_url.startswith("http"):
+                        card_url = "https://www.eventbrite.com" + card_url
                     if not card_url or card_url in seen_urls:
                         continue
                     seen_urls.add(card_url)

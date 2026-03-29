@@ -133,6 +133,71 @@ async def archive_now(interaction: discord.Interaction):
     else:
         await interaction.followup.send(f"✅ Action terminée ! **{count}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
 
+@bot.tree.command(name="stats", description="Affiche le nombre de hackathons en attente, postés et archivés")
+async def stats(interaction: discord.Interaction):
+    s = db.get_stats()
+    embed = discord.Embed(title="Statistiques — Base de données", color=0x534AB7)
+    embed.add_field(
+        name="État actuel",
+        value=(
+            f"En attente de post : **{s['total_pending']}**\n"
+            f"Postés (actifs)    : **{s['total_posted']}**\n"
+            f"Archivés (total)   : **{s['total_archived']}**"
+        ),
+        inline=False
+    )
+    from datetime import datetime
+    embed.set_footer(text=f"Total actifs en base : {s['total_active']} · {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="post_now", description="Pousse des hackathons non postés vers le canal immédiatement (admin)")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(limite="Nombre de hackathons à poster (défaut: 10)")
+async def post_now(interaction: discord.Interaction, limite: int = 10):
+    await interaction.response.defer(ephemeral=True)
+    from scraper.runner import post_pending_hackathons
+    posted = await post_pending_hackathons(bot, limit=limite)
+    if posted == 0:
+        pending = db.get_stats()["total_pending"]
+        if pending == 0:
+            await interaction.followup.send("✅ Aucun hackathon en attente dans la base.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"⚠️ {pending} hackathon(s) en base mais aucun posté (canal introuvable ou tous expirés).", ephemeral=True)
+    else:
+        await interaction.followup.send(f"✅ **{posted}** hackathon(s) postés dans le canal.", ephemeral=True)
+
+
+@bot.tree.command(name="bilan", description="Résumé des actions du bot depuis le début de la journée")
+async def bilan(interaction: discord.Interaction):
+    from datetime import datetime
+    s = db.get_stats()
+    embed = discord.Embed(
+        title=f"Bilan du jour — {datetime.now().strftime('%d/%m/%Y')}",
+        color=0x1D9E75
+    )
+    embed.add_field(
+        name="Aujourd'hui",
+        value=(
+            f"Hackathons scrapés  : **{s['scraped_today']}**\n"
+            f"Hackathons postés   : **{s['posted_today']}**\n"
+            f"Hackathons archivés : **{s['archived_today']}**"
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="Totaux en base",
+        value=(
+            f"En attente de post : **{s['total_pending']}**\n"
+            f"Postés et actifs   : **{s['total_posted']}**\n"
+            f"Archivés           : **{s['total_archived']}**"
+        ),
+        inline=False
+    )
+    embed.set_footer(text=f"Généré à {datetime.now().strftime('%H:%M:%S')}")
+    await interaction.response.send_message(embed=embed)
+
+
 @bot.tree.command(name="test_archive", description="Crée un hackathon de test et l'archive automatiquement après N minutes (admin)")
 @discord.app_commands.default_permissions(administrator=True)
 @discord.app_commands.describe(minutes="Délai avant archivage (défaut: 2 minutes)")

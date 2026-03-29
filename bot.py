@@ -124,14 +124,19 @@ async def scrape(interaction: discord.Interaction):
 async def archive_now(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     from scraper.runner import archive_expired_hackathons
-    count = await archive_expired_hackathons(bot, guild=interaction.guild)
-    
-    if count is None:
-        await interaction.followup.send("❌ Erreur : Impossible de trouver les canaux (Assurez-vous que les IDs `HACKATHON_CHANNEL_ID` et `ARCHIVES_CHANNEL_ID` sont valides).", ephemeral=True)
-    elif count == 0:
-        await interaction.followup.send("✅ Vérification terminée. **0** hackathon n'a eu besoin d'être archivé (tous sont encore encore valides ou la base est vide).", ephemeral=True)
+    result = await archive_expired_hackathons(bot, guild=interaction.guild)
+
+    if isinstance(result, dict) and "error" in result:
+        await interaction.followup.send(
+            f"❌ Erreur canal : {result['error']}\n\n"
+            f"**Debug** : Guild = `{interaction.guild.name}` (`{interaction.guild.id}`)\n"
+            f"Canaux visibles par le bot : {len(interaction.guild.channels)}",
+            ephemeral=True
+        )
+    elif result == 0:
+        await interaction.followup.send("✅ Vérification terminée. **0** hackathon n'a eu besoin d'être archivé.", ephemeral=True)
     else:
-        await interaction.followup.send(f"✅ Action terminée ! **{count}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
+        await interaction.followup.send(f"✅ Action terminée ! **{result}** hackathon(s) expiré(s) ont été déplacés dans les archives.", ephemeral=True)
 
 @bot.tree.command(name="stats", description="Affiche le nombre de hackathons en attente, postés et archivés")
 async def stats(interaction: discord.Interaction):
@@ -157,7 +162,7 @@ async def stats(interaction: discord.Interaction):
 async def post_now(interaction: discord.Interaction, limite: int = 10):
     await interaction.response.defer(ephemeral=True)
     from scraper.runner import post_pending_hackathons
-    posted = await post_pending_hackathons(bot, limit=limite)
+    posted = await post_pending_hackathons(bot, limit=limite, guild=interaction.guild)
     if posted == 0:
         pending = db.get_stats()["total_pending"]
         if pending == 0:

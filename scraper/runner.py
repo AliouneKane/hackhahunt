@@ -23,31 +23,46 @@ ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 
-async def _find_channel(bot, channel_id: int):
-    """Trouve un canal Discord par ID avec plusieurs stratégies de fallback."""
+async def _find_channel(bot, channel_id: int, guild=None):
+    """Trouve un canal Discord par ID. Priorise le guild s'il est fourni."""
     if channel_id == 0:
+        print(f"  [_find_channel] ID = 0, ignoré.")
         return None
-    # 1. Cache local
-    ch = bot.get_channel(channel_id)
-    if ch:
-        return ch
-    # 2. Fetch direct par API
-    try:
-        return await bot.fetch_channel(channel_id)
-    except Exception:
-        pass
-    # 3. Parcourir les guilds du bot et chercher dans chacun
-    for guild in bot.guilds:
+
+    # 1. Si on a un guild, chercher directement dedans
+    if guild:
         ch = guild.get_channel(channel_id)
         if ch:
             return ch
+        # Forcer un fetch des canaux du guild (contourne le cache)
         try:
             channels = await guild.fetch_channels()
             for c in channels:
                 if c.id == channel_id:
                     return c
-        except Exception:
-            continue
+        except Exception as e:
+            print(f"  [_find_channel] guild.fetch_channels() échoué : {e}")
+
+    # 2. Cache global du bot
+    ch = bot.get_channel(channel_id)
+    if ch:
+        return ch
+
+    # 3. Fetch direct par API Discord
+    try:
+        return await bot.fetch_channel(channel_id)
+    except Exception as e:
+        print(f"  [_find_channel] bot.fetch_channel({channel_id}) échoué : {e}")
+
+    # 4. Dernier recours : parcourir tous les guilds connus
+    for g in bot.guilds:
+        if guild and g.id == guild.id:
+            continue  # déjà testé
+        ch = g.get_channel(channel_id)
+        if ch:
+            return ch
+
+    print(f"  [_find_channel] Aucune stratégie n'a trouvé le canal {channel_id}")
     return None
 
 
@@ -134,14 +149,18 @@ async def run_all_scrapers(bot: discord.Client):
     return new_inserts
 
 
-async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
+async def post_pending_hackathons(bot: discord.Client, limit: int = 10, guild=None):
     """Poste une poignée de hackathons encore non publiés pour éviter de spammer."""
     from dotenv import load_dotenv
     load_dotenv(override=True)
     global HACKATHON_CHANNEL_ID
     HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
 
-    channel = await _find_channel(bot, HACKATHON_CHANNEL_ID)
+    if not guild and bot.guilds:
+        g_id = int(str(os.getenv("GUILD_ID", "0")).strip() or "0")
+        guild = discord.utils.get(bot.guilds, id=g_id) or (bot.guilds[0] if bot.guilds else None)
+
+    channel = await _find_channel(bot, HACKATHON_CHANNEL_ID, guild=guild)
     if not channel:
         print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
         return 0
@@ -284,12 +303,24 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
     h_id = int(str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip() or "0")
     a_id = int(str(os.getenv("ARCHIVES_CHANNEL_ID", "0")).strip() or "0")
 
-    hack_channel = await _find_channel(bot, h_id)
-    arch_channel = await _find_channel(bot, a_id)
+    # Récupérer le guild si non fourni
+    if not guild and bot.guilds:
+        g_id = int(str(os.getenv("GUILD_ID", "0")).strip() or "0")
+        guild = discord.utils.get(bot.guilds, id=g_id) or (bot.guilds[0] if bot.guilds else None)
 
-    if not hack_channel or not arch_channel:
-        print(f"❌ [Archive] Canal manquant. Hack({h_id}): {hack_channel}, Arch({a_id}): {arch_channel}")
-        return None
+    print(f"[Archive] Recherche canaux — Guild: {guild} | Hack ID: {h_id} | Arch ID: {a_id}")
+    hack_channel = await _find_channel(bot, h_id, guild=guild)
+    arch_channel = await _find_channel(bot, a_id, guild=guild)
+
+    errors = []
+    if not hack_channel:
+        errors.append(f"HACKATHON_CHANNEL_ID={h_id} introuvable")
+    if not arch_channel:
+        errors.append(f"ARCHIVES_CHANNEL_ID={a_id} introuvable")
+
+    if errors:
+        print(f"❌ [Archive] {' | '.join(errors)}")
+        return {"error": " ; ".join(errors)}
         
     posted_hacks = db.get_posted_hackathons()
     if not posted_hacks:

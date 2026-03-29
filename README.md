@@ -62,14 +62,19 @@ python3 bot.py
 
 La base de données (`hackahunt.db`) se crée automatiquement au premier lancement.
 
-## Déploiement (Heroku)
+## Déploiement (Railway)
 
-```bash
-heroku create
-heroku config:set DISCORD_TOKEN=... GUILD_ID=... HACKATHON_CHANNEL_ID=... ARCHIVES_CHANNEL_ID=... MATCHMAKING_CHANNEL_ID=...
-git push heroku main
-heroku ps:scale worker=1
-```
+1. Connecter le repo GitHub sur [railway.app](https://railway.app)
+2. Créer un nouveau projet → **Deploy from GitHub repo**
+3. Ajouter les variables d'environnement dans l'onglet **Variables** :
+   ```
+   DISCORD_TOKEN
+   GUILD_ID
+   HACKATHON_CHANNEL_ID
+   ARCHIVES_CHANNEL_ID
+   MATCHMAKING_CHANNEL_ID
+   ```
+4. Railway détecte le `Procfile` et lance le worker automatiquement
 
 ## Architecture
 
@@ -79,7 +84,7 @@ hackahunt/
 ├── database.py             # SQLite (hackathons, équipes, matchmaking, welcomed)
 ├── requirements.txt
 ├── .env                    # Variables d'environnement (non versionné)
-├── Procfile                # Heroku worker
+├── Procfile                # Railway worker
 ├── runtime.txt
 │
 ├── cogs/

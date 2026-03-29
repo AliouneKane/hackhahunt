@@ -145,10 +145,13 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
             embed = build_embed(hack)
             try:
                 msg = await channel.send(embed=embed)
-                await msg.add_reaction("👍")
-                await msg.add_reaction("❌")
-                db.update_message_id(hack["id"], str(msg.id))
+                db.update_message_id(hack["id"], str(msg.id))  # sauvegardé avant les réactions
                 total_posted += 1
+                try:
+                    await msg.add_reaction("👍")
+                    await msg.add_reaction("❌")
+                except Exception:
+                    pass  # les réactions sont optionnelles
                 await asyncio.sleep(2)
             except Exception as e:
                 print(f"  Erreur envoi Discord : {e}")

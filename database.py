@@ -98,6 +98,14 @@ def insert_hackathon(data: dict) -> Optional[int]:
     conn = get_connection()
     c = conn.cursor()
     try:
+        # Déduplication par titre (insensible à la casse) en plus de l'URL
+        title = (data.get("title") or "").strip()
+        if title:
+            existing = c.execute(
+                "SELECT id FROM hackathons WHERE LOWER(TRIM(title)) = LOWER(?)", (title,)
+            ).fetchone()
+            if existing:
+                return None  # Même titre déjà en base
         c.execute("""
             INSERT INTO hackathons
             (title, url, source, theme, format, location, prize_1st, prize_2nd,

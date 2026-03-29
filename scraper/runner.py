@@ -76,8 +76,11 @@ async def run_all_scrapers(bot: discord.Client):
 
     channel = bot.get_channel(HACKATHON_CHANNEL_ID)
     if not channel:
-        print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
-        return 0
+        try:
+            channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
+        except Exception as e:
+            print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID}) : {e}")
+            return 0
 
     new_inserts = 0
     for hack in filtered:
@@ -94,8 +97,11 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
     """Poste une poignée de hackathons encore non publiés pour éviter de spammer."""
     channel = bot.get_channel(HACKATHON_CHANNEL_ID)
     if not channel:
-        print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
-        return 0
+        try:
+            channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
+        except Exception as e:
+            print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID}) : {e}")
+            return 0
 
     import dateparser
     from datetime import datetime

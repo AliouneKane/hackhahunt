@@ -287,6 +287,8 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10, guild=No
                 await asyncio.sleep(2)
             except Exception as e:
                 print(f"  Erreur envoi Discord : {e}")
+                # Marquer comme échoué pour ne pas réessayer indéfiniment
+                db.update_message_id(hack["id"], "send_failed")
 
             if total_posted >= limit:
                 break

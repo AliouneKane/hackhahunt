@@ -142,6 +142,8 @@ def scrape_opportunities_africa() -> list:
 
             link_el = card.select_one("a[href]")
             card_url = link_el["href"] if link_el else url
+            if card_url and not card_url.startswith("http"):
+                card_url = "https://www.opportunitiesforafricans.com" + card_url
 
             desc_el = card.select_one("p, .entry-summary, [class*='excerpt']")
             theme = desc_el.get_text(strip=True)[:200] if desc_el else "Opportunité Afrique"

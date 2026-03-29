@@ -176,35 +176,107 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Erreur sync commandes : {e}")
     db.init_db()
-    scraping_task.start()
-    post_pending_task.start()
-    archive_expired_task.start()
+
+    # Lancer les tâches planifiées (seulement si pas déjà en cours — on_ready peut se déclencher plusieurs fois)
+    if not scraping_task.is_running():
+        scraping_task.start()
+    if not post_pending_task.is_running():
+        post_pending_task.start()
+    if not archive_expired_task.is_running():
+        archive_expired_task.start()
+
+    # Exécution immédiate au démarrage (utile sur Railway où la DB est souvent vide)
+    print("🚀 Exécution initiale des tâches au démarrage...")
+    asyncio.create_task(_initial_run())
+
+
+async def _initial_run():
+    """Scrape et poste immédiatement au démarrage du bot."""
+    try:
+        await bot.wait_until_ready()
+        from scraper.runner import run_all_scrapers, post_pending_hackathons
+
+        stats = db.get_stats()
+        print(
+            f"📊 État initial DB : {stats['total_pending']} en attente, {stats['total_posted']} postés, {stats['total_archived']} archivés"
+        )
+
+        # Si la DB est vide (cas Railway après redéploiement), lancer un scraping d'abord
+        if stats["total_pending"] == 0 and stats["total_posted"] == 0:
+            print("🔄 Base vide — lancement d'un scraping initial...")
+            saved = await run_all_scrapers(bot)
+            print(f"📥 Scraping initial terminé : {saved} nouveaux hackathons")
+
+        # Poster les hackathons en attente immédiatement
+        guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+        if guild:
+            posted = await post_pending_hackathons(bot, limit=10, guild=guild)
+            print(f"✅ Initial run terminé : {posted} hackathon(s) posté(s)")
+        else:
+            print(
+                f"❌ Guild {GUILD_ID} introuvable au démarrage. Guilds disponibles : {[g.id for g in bot.guilds]}"
+            )
+    except Exception as e:
+        print(f"❌ Erreur lors de l'exécution initiale : {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 @tasks.loop(hours=6)
 async def scraping_task():
     """Scraping automatique toutes les 6h"""
-    from scraper.runner import run_all_scrapers
+    try:
+        from scraper.runner import run_all_scrapers
 
-    await run_all_scrapers(bot)
+        print("⏰ [scraping_task] Début du scraping automatique...")
+        saved = await run_all_scrapers(bot)
+        print(f"⏰ [scraping_task] Terminé : {saved} nouveaux hackathons")
+    except Exception as e:
+        print(f"❌ [scraping_task] Erreur : {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 @tasks.loop(hours=1)
 async def post_pending_task():
     """Poste 10 hackathons par heure pour éviter le spam."""
-    from scraper.runner import post_pending_hackathons
+    try:
+        from scraper.runner import post_pending_hackathons
 
-    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
-    await post_pending_hackathons(bot, limit=10, guild=guild)
+        print("⏰ [post_pending_task] Vérification des hackathons en attente...")
+        guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+        if not guild:
+            print(f"❌ [post_pending_task] Guild {GUILD_ID} introuvable")
+            return
+        posted = await post_pending_hackathons(bot, limit=10, guild=guild)
+        print(f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s)")
+    except Exception as e:
+        print(f"❌ [post_pending_task] Erreur : {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 @tasks.loop(hours=12)
 async def archive_expired_task():
     """Archive les hackathons expirés toutes les 12h."""
-    from scraper.runner import archive_expired_hackathons
+    try:
+        from scraper.runner import archive_expired_hackathons
 
-    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
-    await archive_expired_hackathons(bot, guild=guild)
+        print("⏰ [archive_expired_task] Vérification des hackathons expirés...")
+        guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+        if not guild:
+            print(f"❌ [archive_expired_task] Guild {GUILD_ID} introuvable")
+            return
+        count = await archive_expired_hackathons(bot, guild=guild)
+        print(f"⏰ [archive_expired_task] Terminé : {count} hackathon(s) archivé(s)")
+    except Exception as e:
+        print(f"❌ [archive_expired_task] Erreur : {e}")
+        import traceback
+
+        traceback.print_exc()
 
 
 @scraping_task.before_loop

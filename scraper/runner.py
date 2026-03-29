@@ -28,6 +28,27 @@ ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 
+def _is_deadline_expired(deadline_str) -> bool:
+    """Vérifie si une deadline est déjà dépassée. Retourne True si expirée ou illisible."""
+    if not deadline_str:
+        return False  # Pas de deadline = pas expiré (on garde)
+    import dateparser
+    from datetime import datetime
+
+    d = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
+    if " - " in d:
+        d = d.split(" - ")[-1].strip()
+    elif "-" in d and not deadline_str.startswith("202"):
+        d = d.split("-")[-1].strip()
+
+    parsed = dateparser.parse(
+        d, settings={"STRICT_PARSING": False, "PREFER_DAY_OF_MONTH": "last"}
+    )
+    if parsed:
+        return parsed.replace(tzinfo=None) < datetime.now()
+    return False  # Parsing échoué = on garde par prudence
+
+
 async def _find_channel(bot, channel_id: int, guild=None):
     """Trouve un canal Discord par ID. Priorise le guild s'il est fourni."""
     if channel_id == 0:
@@ -149,14 +170,22 @@ async def run_all_scrapers(bot: discord.Client):
     print(f"{len(filtered)} hackathons retenus après scoring")
 
     new_inserts = 0
+    expired_skipped = 0
     for hack in filtered:
+        # Vérifier la deadline avant insertion — rejeter si déjà expiré
+        if _is_deadline_expired(hack.get("deadline")):
+            print(
+                f"⏰ Expiré au scraping, ignoré : '{hack['title']}' (deadline: {hack.get('deadline')})"
+            )
+            expired_skipped += 1
+            continue
         # Seuls les hacks n'existant pas encore seront ajoutés (id is not None)
         hack_id = db.insert_hackathon(hack)
         if hack_id is not None:
             new_inserts += 1
 
     print(
-        f"Scraping fini : {new_inserts} nouveaux hackathons insérés en base (en attente de post)."
+        f"Scraping fini : {new_inserts} nouveaux hackathons insérés, {expired_skipped} expirés ignorés."
     )
     return new_inserts
 
@@ -197,32 +226,16 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10, guild=No
             break
 
         for hack in pending:
+            # ── 1. Vérifier la deadline ──
             deadline_str = hack.get("deadline")
-            expired = False
-
-            if deadline_str:
-                d_clean = deadline_str.replace("byOFA", "").strip()
-                if " - " in d_clean:
-                    d_clean = d_clean.split(" - ")[-1].strip()
-                elif "-" in d_clean and not deadline_str.startswith("202"):
-                    d_clean = d_clean.split("-")[-1].strip()
-
-                parsed_date = dateparser.parse(
-                    d_clean, settings={"STRICT_PARSING": False}
-                )
-                if parsed_date:
-                    parsed_date = parsed_date.replace(tzinfo=None)
-                    if parsed_date < now:
-                        expired = True
-
-            if expired:
+            if _is_deadline_expired(deadline_str):
                 print(
-                    f"🗑️ Hackathon expiré supprimé : '{hack['title']}' (Deadline: {deadline_str})"
+                    f"⏰ Hackathon expiré, supprimé de la base : '{hack['title']}' (deadline: {deadline_str})"
                 )
                 db.delete_hackathon(hack["id"])
                 continue
 
-            # Anti-doublon : vérifier si ce titre est déjà dans le canal
+            # ── 2. Anti-doublon : vérifier si ce titre est déjà dans le canal ──
             title_clean = hack.get("title", "").strip().lower()
             if title_clean in existing_titles:
                 print(f"⏭️ Doublon ignoré (déjà dans le canal) : '{hack['title']}'")
@@ -378,21 +391,6 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
     now = datetime.now()
     archived_count = 0
 
-    def _is_expired(deadline_str):
-        if not deadline_str:
-            return False
-        d = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
-        if " - " in d:
-            d = d.split(" - ")[-1].strip()
-        elif "-" in d and not deadline_str.startswith("202"):
-            d = d.split("-")[-1].strip()
-        parsed = dateparser.parse(
-            d, settings={"STRICT_PARSING": False, "PREFER_DAY_OF_MONTH": "last"}
-        )
-        if parsed:
-            return parsed.replace(tzinfo=None) < now
-        return False
-
     # ── Méthode 1 : via la base de données (hackathons avec discord_message_id) ──
     posted_hacks = db.get_posted_hackathons()
     print(
@@ -400,7 +398,7 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
     )
 
     for hack in posted_hacks:
-        if not _is_expired(hack.get("deadline")):
+        if not _is_deadline_expired(hack.get("deadline")):
             continue
         print(f"📦 [DB] Archivage de : {hack['title']}")
         try:
@@ -446,7 +444,7 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
                     deadline_str = field.value
                     break
 
-            if not _is_expired(deadline_str):
+            if not _is_deadline_expired(deadline_str):
                 continue
 
             title = embed.title or "Inconnu"

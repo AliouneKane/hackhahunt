@@ -167,7 +167,7 @@ def get_posted_hackathons() -> list:
     """Récupère les hackathons déjà publiés sur Discord et encore actifs"""
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM hackathons WHERE discord_message_id IS NOT NULL AND status = 'active'"
+        "SELECT * FROM hackathons WHERE discord_message_id IS NOT NULL AND discord_message_id != 'duplicate_skipped' AND status = 'active'"
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]

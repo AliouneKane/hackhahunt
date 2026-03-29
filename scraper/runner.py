@@ -22,6 +22,49 @@ HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
 ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
+
+async def _find_channel(bot, channel_id: int):
+    """Trouve un canal Discord par ID avec plusieurs stratégies de fallback."""
+    if channel_id == 0:
+        return None
+    # 1. Cache local
+    ch = bot.get_channel(channel_id)
+    if ch:
+        return ch
+    # 2. Fetch direct par API
+    try:
+        return await bot.fetch_channel(channel_id)
+    except Exception:
+        pass
+    # 3. Parcourir les guilds du bot et chercher dans chacun
+    for guild in bot.guilds:
+        ch = guild.get_channel(channel_id)
+        if ch:
+            return ch
+        try:
+            channels = await guild.fetch_channels()
+            for c in channels:
+                if c.id == channel_id:
+                    return c
+        except Exception:
+            continue
+    return None
+
+
+async def _get_channel_titles(channel, limit: int = 200) -> set:
+    """Récupère les titres des embeds déjà postés dans un canal."""
+    titles = set()
+    try:
+        async for msg in channel.history(limit=limit):
+            for embed in msg.embeds:
+                if embed.title:
+                    # Le titre dans build_embed est "Titre — Source", on prend la partie avant " — "
+                    clean = embed.title.split(" — ")[0].strip().lower()
+                    titles.add(clean)
+    except Exception as e:
+        print(f"⚠️ Impossible de lire l'historique du canal : {e}")
+    return titles
+
 LEVEL_COLORS = {
     "Débutant":      0x1D9E75,
     "Intermédiaire": 0x185FA5,
@@ -80,14 +123,6 @@ async def run_all_scrapers(bot: discord.Client):
     filtered = filter_and_score(all_raw)
     print(f"{len(filtered)} hackathons retenus après scoring")
 
-    channel = bot.get_channel(HACKATHON_CHANNEL_ID)
-    if not channel:
-        try:
-            channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
-        except Exception as e:
-            print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID}) : {e}")
-            return 0
-
     new_inserts = 0
     for hack in filtered:
         # Seuls les hacks n'existant pas encore seront ajoutés (id is not None)
@@ -106,25 +141,23 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
     global HACKATHON_CHANNEL_ID
     HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
 
-    channel = bot.get_channel(HACKATHON_CHANNEL_ID)
+    channel = await _find_channel(bot, HACKATHON_CHANNEL_ID)
     if not channel:
-        try:
-            channel = await bot.fetch_channel(HACKATHON_CHANNEL_ID)
-        except Exception as e:
-            print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID}) : {e}")
-            return 0
+        print(f"Canal introuvable (ID: {HACKATHON_CHANNEL_ID})")
+        return 0
 
     import dateparser
     from datetime import datetime
-    
+
     now = datetime.now()
-    posted = 0
     total_posted = 0
-    
+
+    # Scanner les titres déjà présents dans le canal pour éviter les doublons
+    existing_titles = await _get_channel_titles(channel)
+    print(f"🔍 {len(existing_titles)} titres déjà présents dans le canal.")
     print(f"🚀 Publication de hackathons (Objectif: {limit})...")
-    
+
     while total_posted < limit:
-        # Fetching remaining amount to reach limit
         pending = db.get_unposted_hackathons(limit=min(10, limit - total_posted))
         if not pending:
             break
@@ -132,16 +165,14 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
         for hack in pending:
             deadline_str = hack.get("deadline")
             expired = False
-            
+
             if deadline_str:
                 d_clean = deadline_str.replace("byOFA", "").strip()
                 if " - " in d_clean:
                     d_clean = d_clean.split(" - ")[-1].strip()
                 elif "-" in d_clean and not deadline_str.startswith("202"):
-                    # If it's a range like Mar 21-28, 2026, we try to preserve year if needed, 
-                    # but simple split is a best effort.
                     d_clean = d_clean.split("-")[-1].strip()
-                
+
                 parsed_date = dateparser.parse(d_clean, settings={'STRICT_PARSING': False})
                 if parsed_date:
                     parsed_date = parsed_date.replace(tzinfo=None)
@@ -153,23 +184,31 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10):
                 db.delete_hackathon(hack["id"])
                 continue
 
+            # Anti-doublon : vérifier si ce titre est déjà dans le canal
+            title_clean = hack.get("title", "").strip().lower()
+            if title_clean in existing_titles:
+                print(f"⏭️ Doublon ignoré (déjà dans le canal) : '{hack['title']}'")
+                db.update_message_id(hack["id"], "duplicate_skipped")
+                continue
+
             embed = build_embed(hack)
             try:
                 msg = await channel.send(embed=embed)
-                db.update_message_id(hack["id"], str(msg.id))  # sauvegardé avant les réactions
+                db.update_message_id(hack["id"], str(msg.id))
+                existing_titles.add(title_clean)  # Ajouter au set pour ce cycle
                 total_posted += 1
                 try:
                     await msg.add_reaction("👍")
                     await msg.add_reaction("❌")
                 except Exception:
-                    pass  # les réactions sont optionnelles
+                    pass
                 await asyncio.sleep(2)
             except Exception as e:
                 print(f"  Erreur envoi Discord : {e}")
-                
+
             if total_posted >= limit:
                 break
-                
+
     print(f"{total_posted} nouveaux hackathons postés sur Discord ce tour-ci !")
     return total_posted
 
@@ -240,39 +279,16 @@ def build_embed(hack: dict) -> discord.Embed:
 async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild = None):
     """Vérifie les hackathons publiés. Si la deadline est passée, les déplace dans l'archive."""
     from dotenv import load_dotenv
-    load_dotenv(override=True)  # Recharger le .env à chaque appel
+    load_dotenv(override=True)
 
-    # Nettoyage des IDs (gestion des espaces invisibles dans le .env)
-    h_str = str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip()
-    a_str = str(os.getenv("ARCHIVES_CHANNEL_ID", "0")).strip()
-    
-    h_id = int(h_str) if h_str.isdigit() else 0
-    a_id = int(a_str) if a_str.isdigit() else 0
+    h_id = int(str(os.getenv("HACKATHON_CHANNEL_ID", "0")).strip() or "0")
+    a_id = int(str(os.getenv("ARCHIVES_CHANNEL_ID", "0")).strip() or "0")
 
-    hack_channel = None
-    arch_channel = None
+    hack_channel = await _find_channel(bot, h_id)
+    arch_channel = await _find_channel(bot, a_id)
 
-    if h_id != 0:
-        hack_channel = bot.get_channel(h_id)
-        if not hack_channel:
-            try:
-                hack_channel = await bot.fetch_channel(h_id)
-            except:
-                print(f"⚠️ [Archive] Impossible de fetch HACKATHON_CHANNEL_ID: {h_id}")
-    
-    if a_id != 0:
-        arch_channel = bot.get_channel(a_id)
-        if not arch_channel:
-            try:
-                arch_channel = await bot.fetch_channel(a_id)
-                print(f"  [Archive] Canal Archives trouvé par fetch (ID: {a_id})")
-            except Exception as e:
-                print(f"  [Archive] Erreur fetch arch_channel (ID {a_id}) : {e}")
-    else:
-        print("  [Archive] ARCHIVES_CHANNEL_ID est à 0 dans le .env !")
-    
     if not hack_channel or not arch_channel:
-        print(f"❌ [Archive] Canal manquant. Hack: {hack_channel}, Arch: {arch_channel}")
+        print(f"❌ [Archive] Canal manquant. Hack({h_id}): {hack_channel}, Arch({a_id}): {arch_channel}")
         return None
         
     posted_hacks = db.get_posted_hackathons()

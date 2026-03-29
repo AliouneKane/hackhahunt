@@ -322,66 +322,112 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
         print(f"❌ [Archive] {' | '.join(errors)}")
         return {"error": " ; ".join(errors)}
         
-    posted_hacks = db.get_posted_hackathons()
-    if not posted_hacks:
-        print("Aucun hackathon publié en base de données.")
-        return 0
-        
     import dateparser
     from datetime import datetime
     now = datetime.now()
     archived_count = 0
-    
-    for hack in posted_hacks:
-        deadline_str = hack.get("deadline")
-        expired = False
-        
-        if deadline_str:
-            d_clean = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
-            if " - " in d_clean:
-                d_clean = d_clean.split(" - ")[-1].strip()
-            elif "-" in d_clean and not deadline_str.startswith("202"):
-                d_clean = d_clean.split("-")[-1].strip()
-            
-            parsed_date = dateparser.parse(d_clean, settings={'STRICT_PARSING': False})
-            if parsed_date:
-                parsed_date = parsed_date.replace(tzinfo=None)
-                if parsed_date < now:
-                    expired = True
 
-        if expired:
-            print(f"📦 Archivage de : {hack['title']}")
+    def _is_expired(deadline_str):
+        if not deadline_str:
+            return False
+        d = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
+        if " - " in d:
+            d = d.split(" - ")[-1].strip()
+        elif "-" in d and not deadline_str.startswith("202"):
+            d = d.split("-")[-1].strip()
+        parsed = dateparser.parse(d, settings={'STRICT_PARSING': False, 'PREFER_DAY_OF_MONTH': 'last'})
+        if parsed:
+            return parsed.replace(tzinfo=None) < now
+        return False
+
+    # ── Méthode 1 : via la base de données (hackathons avec discord_message_id) ──
+    posted_hacks = db.get_posted_hackathons()
+    print(f"[Archive] {len(posted_hacks)} hackathon(s) trouvés en base avec message_id.")
+
+    for hack in posted_hacks:
+        if not _is_expired(hack.get("deadline")):
+            continue
+        print(f"📦 [DB] Archivage de : {hack['title']}")
+        try:
+            msg_id_str = hack.get("discord_message_id", "").strip()
+            if msg_id_str and msg_id_str.isdigit():
+                try:
+                    old_msg = await hack_channel.fetch_message(int(msg_id_str))
+                    await old_msg.delete()
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    print(f"  Impossible de supprimer le message: {e}")
+
+            archive_embed = build_embed(hack)
+            archive_embed.color = discord.Color.dark_grey()
+            archive_embed.set_footer(text=f"Score: {hack.get('score', 0)}/10 · Hackathon Terminé / Archivé")
+            await arch_channel.send(content="**[ARCHIVE]**", embed=archive_embed)
+            db.archive_hackathon(hack["id"])
+            archived_count += 1
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"  Erreur archivage DB {hack['title']} : {e}")
+
+    # ── Méthode 2 : scan direct du canal (rattrape les messages non trackés en base) ──
+    print(f"[Archive] Scan de l'historique du canal #{hack_channel.name}...")
+    already_archived_msg_ids = set()
+
+    try:
+        async for msg in hack_channel.history(limit=500):
+            if msg.author.id != bot.user.id:
+                continue
+            if not msg.embeds:
+                continue
+
+            embed = msg.embeds[0]
+
+            # Extraire la deadline depuis les fields de l'embed
+            deadline_str = None
+            for field in embed.fields:
+                if field.name and "deadline" in field.name.lower():
+                    deadline_str = field.value
+                    break
+
+            if not _is_expired(deadline_str):
+                continue
+
+            title = embed.title or "Inconnu"
+            print(f"📦 [SCAN] Archivage de : {title} (msg {msg.id})")
+
             try:
-                # 1. Tenter de supprimer l'ancien message
-                msg_id_str = hack.get("discord_message_id", "").strip()
-                if msg_id_str and msg_id_str.isdigit():
-                    try:
-                        old_msg = await hack_channel.fetch_message(int(msg_id_str))
-                        await old_msg.delete()
-                    except discord.NotFound:
-                        pass # Le message était peut-être déjà supprimé
-                    except Exception as msg_ex:
-                        print(f"Impossible de supprimer le vieux message: {msg_ex}")
-                        pass
-                        
-                # 2. Poster dans les archives
-                embed = build_embed(hack)
-                embed.color = discord.Color.dark_grey() # Griser l'archive
-                embed.set_footer(text=f"Score: {hack.get('score', 0)}/10 · Hackathon Terminé / Archivé")
-                
-                await arch_channel.send(content="**[ARCHIVE]**", embed=embed)
-                
-                # 3. Mettre à jour en BDD
-                db.archive_hackathon(hack["id"])
+                # Construire un embed archive depuis l'embed existant
+                archive_embed = discord.Embed(
+                    title=embed.title,
+                    url=embed.url,
+                    color=discord.Color.dark_grey(),
+                    description=embed.description
+                )
+                for field in embed.fields:
+                    archive_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+                archive_embed.set_footer(text="Hackathon Terminé / Archivé")
+
+                await arch_channel.send(content="**[ARCHIVE]**", embed=archive_embed)
+                await msg.delete()
+
+                # Mettre à jour la base si on trouve le hackathon par titre
+                title_clean = title.split(" — ")[0].strip()
+                conn = __import__('sqlite3').connect(db.DB_PATH)
+                row = conn.execute(
+                    "SELECT id FROM hackathons WHERE LOWER(TRIM(title)) = LOWER(?) AND status = 'active'",
+                    (title_clean,)
+                ).fetchone()
+                if row:
+                    db.archive_hackathon(row[0])
+                conn.close()
+
                 archived_count += 1
                 await asyncio.sleep(1)
-                
             except Exception as e:
-                print(f"Erreur lors de l'archivage de {hack['title']} : {e}")
+                print(f"  Erreur archivage SCAN {title} : {e}")
 
-    if archived_count > 0:
-        print(f"✅ {archived_count} hackathons ont été archivés.")
-    else:
-        print("Aucun hackathon n'avait expiré.")
-    
+    except Exception as e:
+        print(f"[Archive] Erreur lors du scan du canal : {e}")
+
+    print(f"✅ {archived_count} hackathon(s) archivé(s) au total.")
     return archived_count

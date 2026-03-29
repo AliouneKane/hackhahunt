@@ -6,3 +6,4 @@ hackahunt.db
 venv/
 .DS_Store
 .claude/
+*.db

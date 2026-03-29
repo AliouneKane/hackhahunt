@@ -89,6 +89,16 @@ def init_db():
         )
     """)
 
+    # Colonnes ajoutées après la création initiale (migration douce)
+    for col, definition in [
+        ("discord_posted_at", "TEXT"),
+        ("archived_at", "TEXT"),
+    ]:
+        try:
+            c.execute(f"ALTER TABLE hackathons ADD COLUMN {col} {definition}")
+        except sqlite3.OperationalError:
+            pass  # colonne déjà présente
+
     conn.commit()
     conn.close()
     print("✅ Base de données initialisée")
@@ -130,8 +140,8 @@ def insert_hackathon(data: dict) -> Optional[int]:
 def update_message_id(hackathon_id: int, message_id: str):
     conn = get_connection()
     conn.execute(
-        "UPDATE hackathons SET discord_message_id = ? WHERE id = ?",
-        (message_id, hackathon_id)
+        "UPDATE hackathons SET discord_message_id = ?, discord_posted_at = ? WHERE id = ?",
+        (message_id, datetime.now().isoformat(), hackathon_id)
     )
     conn.commit()
     conn.close()
@@ -170,11 +180,40 @@ def delete_hackathon(hackathon_id: int):
     conn.close()
 
 def archive_hackathon(hackathon_id: int):
-    """Marque un hackathon comme archivé et supprime son message ID"""
+    """Marque un hackathon comme archivé"""
     conn = get_connection()
-    conn.execute("UPDATE hackathons SET status = 'archived' WHERE id = ?", (hackathon_id,))
+    conn.execute(
+        "UPDATE hackathons SET status = 'archived', archived_at = ? WHERE id = ?",
+        (datetime.now().isoformat(), hackathon_id)
+    )
     conn.commit()
     conn.close()
+
+
+def get_stats() -> dict:
+    """Retourne les compteurs globaux et les stats du jour."""
+    conn = get_connection()
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    total_active   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active'").fetchone()[0]
+    total_pending  = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NULL").fetchone()[0]
+    total_posted   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NOT NULL").fetchone()[0]
+    total_archived = conn.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'archived'").fetchone()[0]
+
+    scraped_today  = conn.execute("SELECT COUNT(*) FROM hackathons WHERE posted_at LIKE ?", (f"{today}%",)).fetchone()[0]
+    posted_today   = conn.execute("SELECT COUNT(*) FROM hackathons WHERE discord_posted_at LIKE ?", (f"{today}%",)).fetchone()[0]
+    archived_today = conn.execute("SELECT COUNT(*) FROM hackathons WHERE archived_at LIKE ?", (f"{today}%",)).fetchone()[0]
+
+    conn.close()
+    return {
+        "total_active":   total_active,
+        "total_pending":  total_pending,
+        "total_posted":   total_posted,
+        "total_archived": total_archived,
+        "scraped_today":  scraped_today,
+        "posted_today":   posted_today,
+        "archived_today": archived_today,
+    }
 
 def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     conn = get_connection()

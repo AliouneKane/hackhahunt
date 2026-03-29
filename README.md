@@ -46,9 +46,12 @@ L'objectif de HackaHunt est de :
 | --- | --- | --- |
 | `/ping` | Tous | Vérifie la latence du bot |
 | `/aide` | Tous | Liste toutes les commandes disponibles |
-| `/scrape` | Admin | Lance un scraping manuel immédiat |
-| `/archive_now` | Admin | Force l'archivage des hackathons expirés |
-| `/test_archive` | Admin | Crée un hackathon fictif et le poste, puis l'archive automatiquement après N minutes (défaut : 5 min) — utile pour tester le pipeline en local |
+| `/stats` | Tous | Nombre de hackathons en attente, postés et archivés en base |
+| `/bilan` | Tous | Résumé des actions du bot depuis le début de la journée (scrapés, postés, archivés) |
+| `/scrape` | Admin | Lance un scraping manuel immédiat sur toutes les plateformes |
+| `/post_now [limite]` | Admin | Pousse immédiatement N hackathons non postés vers le canal (défaut : 10) |
+| `/archive_now` | Admin | Force l'archivage des hackathons dont la deadline est dépassée |
+| `/test_archive [minutes]` | Admin | Crée un hackathon fictif, le poste, puis l'archive automatiquement après N minutes (défaut : 5) |
 | `/diagnose` | Tous | Vérifie la configuration des canaux dans le `.env` |
 
 ## Prérequis

@@ -201,6 +201,9 @@ GEO_AFRICA = [
     "senegal",
     "sénégal",
     "dakar",
+    "saint-louis",
+    "thiès",
+    "ziguinchor",
     "nigeria",
     "kenya",
     "ghana",
@@ -215,6 +218,19 @@ GEO_AFRICA = [
     "afrique de l'ouest",
     "sub-saharan",
     "subsaharienne",
+]
+
+# Mots-clés spécifiques au Sénégal (bonus supplémentaire)
+GEO_SENEGAL = [
+    "senegal",
+    "sénégal",
+    "dakar",
+    "saint-louis",
+    "thiès",
+    "ziguinchor",
+    "ctic",
+    "jokkolabs",
+    "galsen",
 ]
 
 
@@ -271,8 +287,13 @@ def score_hackathon(hack: dict) -> dict:
     elif lang == "fr/en":
         score += 1
 
-    # ── 6. Bonus source africaine ─────────────────────────────────────────────
-    if hack.get("source") in ["zindi", "a2sv", "geekulcha"]:
+    # ── 6. Bonus source africaine / sénégalaise ─────────────────────────────
+    african_sources = ["zindi", "a2sv", "geekulcha", "google_senegal"]
+    if hack.get("source") in african_sources:
+        score = min(score + 1, 10)
+
+    # ── 7. Bonus Sénégal : +1 si mention directe du Sénégal ─────────────
+    if any(kw in text for kw in GEO_SENEGAL):
         score = min(score + 1, 10)
 
     score = min(score, 10)

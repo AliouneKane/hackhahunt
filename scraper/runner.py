@@ -21,6 +21,7 @@ from scraper.africa_platforms import (
 )
 from scraper.eventbrite import scrape_eventbrite
 from scraper.drivendata import scrape_drivendata
+from scraper.senegal_platforms import scrape_google_senegal
 from scraper.scorer import filter_and_score
 
 HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
@@ -137,6 +138,8 @@ SCRAPERS = [
     {"fn": scrape_opportunities_africa, "name": "OpportunitiesAfrica"},
     {"fn": scrape_eventbrite, "name": "Eventbrite"},
     {"fn": scrape_drivendata, "name": "DrivenData"},
+    # ── Source Sénégal (Google Search) ──
+    {"fn": scrape_google_senegal, "name": "GoogleSenegal"},
 ]
 
 
@@ -148,7 +151,7 @@ async def run_all_scrapers(bot: discord.Client):
     HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
     ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 
-    print("Démarrage du scraping — 12 sources...")
+    print("Démarrage du scraping — 13 sources...")
     all_raw = []
     source_stats = {}
 

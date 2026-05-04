@@ -484,14 +484,9 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
 
                 # Mettre à jour la base si on trouve le hackathon par titre
                 title_clean = title.split(" — ")[0].strip()
-                conn = __import__("sqlite3").connect(db.DB_PATH)
-                row = conn.execute(
-                    "SELECT id FROM hackathons WHERE LOWER(TRIM(title)) = LOWER(?) AND status = 'active'",
-                    (title_clean,),
-                ).fetchone()
-                if row:
-                    db.archive_hackathon(row[0])
-                conn.close()
+                hack = db.get_hackathon_by_title(title_clean)
+                if hack:
+                    db.archive_hackathon(hack["id"])
 
                 archived_count += 1
                 await asyncio.sleep(1)

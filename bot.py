@@ -197,7 +197,7 @@ async def _initial_run():
         await bot.wait_until_ready()
         from scraper.runner import run_all_scrapers, post_pending_hackathons
 
-        stats = db.get_stats()
+        stats = await asyncio.to_thread(db.get_stats)
         print(
             f"📊 État initial DB : {stats['total_pending']} en attente, {stats['total_posted']} postés, {stats['total_archived']} archivés"
         )
@@ -274,7 +274,7 @@ async def post_pending_task():
             )
             return
         posted = await post_pending_hackathons(bot, limit=1, guild=guild)
-        stats = db.get_stats()
+        stats = await asyncio.to_thread(db.get_stats)
         pending = stats["total_pending"]
         print(
             f"⏰ [post_pending_task] Terminé : {posted} hackathon(s) posté(s), {pending} en attente"
@@ -416,7 +416,7 @@ async def archive_now(interaction: discord.Interaction):
 )
 async def stats(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    s = db.get_stats()
+    s = await asyncio.to_thread(db.get_stats)
     embed = discord.Embed(title="Statistiques — Base de données", color=0x534AB7)
     embed.add_field(
         name="État actuel",
@@ -447,7 +447,7 @@ async def post_now(interaction: discord.Interaction, limite: int = 10):
 
     posted = await post_pending_hackathons(bot, limit=limite, guild=interaction.guild)
     if posted == 0:
-        pending = db.get_stats()["total_pending"]
+        pending = (await asyncio.to_thread(db.get_stats))["total_pending"]
         if pending == 0:
             await interaction.followup.send(
                 "✅ Aucun hackathon en attente dans la base.", ephemeral=True
@@ -470,7 +470,7 @@ async def bilan(interaction: discord.Interaction):
     await interaction.response.defer()
     from datetime import datetime
 
-    s = db.get_stats()
+    s = await asyncio.to_thread(db.get_stats)
     embed = discord.Embed(
         title=f"Bilan du jour — {datetime.now().strftime('%d/%m/%Y')}", color=0x1D9E75
     )

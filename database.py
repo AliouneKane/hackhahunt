@@ -243,37 +243,30 @@ def get_stats() -> dict:
     conn = get_connection()
     c = conn.cursor()
     today = datetime.now().strftime("%Y-%m-%d")
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active'")
-    total_active = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NULL")
-    total_pending = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'active' AND discord_message_id IS NOT NULL")
-    total_posted = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE status = 'archived'")
-    total_archived = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE posted_at LIKE %s", (f"{today}%",))
-    scraped_today = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE discord_posted_at LIKE %s", (f"{today}%",))
-    posted_today = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM hackathons WHERE archived_at LIKE %s", (f"{today}%",))
-    archived_today = c.fetchone()[0]
-
+    c.execute(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'active') AS total_active,
+            COUNT(*) FILTER (WHERE status = 'active' AND discord_message_id IS NULL) AS total_pending,
+            COUNT(*) FILTER (WHERE status = 'active' AND discord_message_id IS NOT NULL) AS total_posted,
+            COUNT(*) FILTER (WHERE status = 'archived') AS total_archived,
+            COUNT(*) FILTER (WHERE posted_at LIKE %s) AS scraped_today,
+            COUNT(*) FILTER (WHERE discord_posted_at LIKE %s) AS posted_today,
+            COUNT(*) FILTER (WHERE archived_at LIKE %s) AS archived_today
+        FROM hackathons
+        """,
+        (f"{today}%", f"{today}%", f"{today}%"),
+    )
+    row = c.fetchone()
     release_connection(conn)
     return {
-        "total_active": total_active,
-        "total_pending": total_pending,
-        "total_posted": total_posted,
-        "total_archived": total_archived,
-        "scraped_today": scraped_today,
-        "posted_today": posted_today,
-        "archived_today": archived_today,
+        "total_active": row[0],
+        "total_pending": row[1],
+        "total_posted": row[2],
+        "total_archived": row[3],
+        "scraped_today": row[4],
+        "posted_today": row[5],
+        "archived_today": row[6],
     }
 
 

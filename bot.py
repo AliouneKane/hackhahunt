@@ -415,6 +415,7 @@ async def archive_now(interaction: discord.Interaction):
     description="Affiche le nombre de hackathons en attente, postés et archivés",
 )
 async def stats(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     s = db.get_stats()
     embed = discord.Embed(title="Statistiques — Base de données", color=0x534AB7)
     embed.add_field(
@@ -431,7 +432,7 @@ async def stats(interaction: discord.Interaction):
     embed.set_footer(
         text=f"Total actifs en base : {s['total_active']} · {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(
@@ -466,6 +467,7 @@ async def post_now(interaction: discord.Interaction, limite: int = 10):
     name="bilan", description="Résumé des actions du bot depuis le début de la journée"
 )
 async def bilan(interaction: discord.Interaction):
+    await interaction.response.defer()
     from datetime import datetime
 
     s = db.get_stats()
@@ -491,7 +493,7 @@ async def bilan(interaction: discord.Interaction):
         inline=False,
     )
     embed.set_footer(text=f"Généré à {datetime.now().strftime('%H:%M:%S')}")
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(

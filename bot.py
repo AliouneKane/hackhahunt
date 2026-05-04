@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+from aiohttp import web
 import os
 import asyncio
 import database as db
@@ -672,10 +673,23 @@ async def welcome_all(interaction: discord.Interaction):
     )
 
 
+# ── Serveur HTTP (keep-alive pour Render) ────────────────────────────────────
+async def health_server():
+    app = web.Application()
+    app.router.add_get("/", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"🌐 Health server démarré sur le port {port}")
+
+
 # ── Lancement ────────────────────────────────────────────────────────────────
 async def main():
     async with bot:
         await load_cogs()
+        asyncio.create_task(health_server())
         await bot.start(TOKEN)
 
 

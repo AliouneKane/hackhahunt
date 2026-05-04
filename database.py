@@ -1,12 +1,25 @@
 import psycopg2
+import psycopg2.pool
 import os
 from datetime import datetime
 from typing import Optional
 
+_pool: psycopg2.pool.SimpleConnectionPool | None = None
+
+
+def _get_pool() -> psycopg2.pool.SimpleConnectionPool:
+    global _pool
+    if _pool is None:
+        _pool = psycopg2.pool.SimpleConnectionPool(1, 5, os.getenv("DATABASE_URL"))
+    return _pool
+
 
 def get_connection():
-    conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-    return conn
+    return _get_pool().getconn()
+
+
+def release_connection(conn):
+    _get_pool().putconn(conn)
 
 
 def _fetchall_dict(cursor) -> list:
@@ -109,7 +122,7 @@ def init_db():
     """)
 
     conn.commit()
-    conn.close()
+    release_connection(conn)
     print("✅ Base de données initialisée")
 
 
@@ -161,7 +174,7 @@ def insert_hackathon(data: dict) -> Optional[int]:
         conn.rollback()
         return None
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def update_message_id(hackathon_id: int, message_id: str):
@@ -172,7 +185,7 @@ def update_message_id(hackathon_id: int, message_id: str):
         (message_id, datetime.now().isoformat(), hackathon_id),
     )
     conn.commit()
-    conn.close()
+    release_connection(conn)
 
 
 def get_active_hackathons() -> list:
@@ -180,7 +193,7 @@ def get_active_hackathons() -> list:
     c = conn.cursor()
     c.execute("SELECT * FROM hackathons WHERE status = 'active' ORDER BY score DESC")
     rows = _fetchall_dict(c)
-    conn.close()
+    release_connection(conn)
     return rows
 
 
@@ -192,7 +205,7 @@ def get_unposted_hackathons(limit: int = 10) -> list:
         (limit,),
     )
     rows = _fetchall_dict(c)
-    conn.close()
+    release_connection(conn)
     return rows
 
 
@@ -203,7 +216,7 @@ def get_posted_hackathons() -> list:
         "SELECT * FROM hackathons WHERE discord_message_id IS NOT NULL AND discord_message_id != 'duplicate_skipped' AND status = 'active'"
     )
     rows = _fetchall_dict(c)
-    conn.close()
+    release_connection(conn)
     return rows
 
 
@@ -212,7 +225,7 @@ def delete_hackathon(hackathon_id: int):
     c = conn.cursor()
     c.execute("DELETE FROM hackathons WHERE id = %s", (hackathon_id,))
     conn.commit()
-    conn.close()
+    release_connection(conn)
 
 
 def archive_hackathon(hackathon_id: int):
@@ -223,7 +236,7 @@ def archive_hackathon(hackathon_id: int):
         (datetime.now().isoformat(), hackathon_id),
     )
     conn.commit()
-    conn.close()
+    release_connection(conn)
 
 
 def get_stats() -> dict:
@@ -252,7 +265,7 @@ def get_stats() -> dict:
     c.execute("SELECT COUNT(*) FROM hackathons WHERE archived_at LIKE %s", (f"{today}%",))
     archived_today = c.fetchone()[0]
 
-    conn.close()
+    release_connection(conn)
     return {
         "total_active": total_active,
         "total_pending": total_pending,
@@ -272,7 +285,7 @@ def get_hackathon_by_title(title: str) -> Optional[dict]:
         (title,),
     )
     row = _fetchone_dict(c)
-    conn.close()
+    release_connection(conn)
     return row
 
 
@@ -281,7 +294,7 @@ def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     c = conn.cursor()
     c.execute("SELECT * FROM hackathons WHERE discord_message_id = %s", (message_id,))
     row = _fetchone_dict(c)
-    conn.close()
+    release_connection(conn)
     return row
 
 
@@ -298,7 +311,7 @@ def add_interest(hackathon_id: int, user_id: str, username: str):
     except psycopg2.IntegrityError:
         conn.rollback()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def remove_interest(hackathon_id: int, user_id: str):
@@ -309,7 +322,7 @@ def remove_interest(hackathon_id: int, user_id: str):
         (hackathon_id, user_id),
     )
     conn.commit()
-    conn.close()
+    release_connection(conn)
 
 
 def get_interested_users(hackathon_id: int) -> list:
@@ -320,7 +333,7 @@ def get_interested_users(hackathon_id: int) -> list:
         (hackathon_id,),
     )
     rows = _fetchall_dict(c)
-    conn.close()
+    release_connection(conn)
     return rows
 
 
@@ -337,7 +350,7 @@ def add_vote(hackathon_id: int, voter_id: str, target_id: str):
     except psycopg2.IntegrityError:
         conn.rollback()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def check_mutual_match(hackathon_id: int, user_a: str, user_b: str) -> bool:
@@ -353,7 +366,7 @@ def check_mutual_match(hackathon_id: int, user_a: str, user_b: str) -> bool:
         (hackathon_id, user_b, user_a),
     )
     b_voted_a = c.fetchone()
-    conn.close()
+    release_connection(conn)
     return bool(a_voted_b and b_voted_a)
 
 
@@ -365,7 +378,7 @@ def get_user_votes(hackathon_id: int, voter_id: str) -> list:
         (hackathon_id, voter_id),
     )
     rows = c.fetchall()
-    conn.close()
+    release_connection(conn)
     return [r[0] for r in rows]
 
 
@@ -386,7 +399,7 @@ def create_team(
             (team_id, uid),
         )
     conn.commit()
-    conn.close()
+    release_connection(conn)
     return team_id
 
 
@@ -402,7 +415,7 @@ def get_user_team(hackathon_id: int, user_id: str) -> Optional[dict]:
         (hackathon_id, user_id),
     )
     row = _fetchone_dict(c)
-    conn.close()
+    release_connection(conn)
     return row
 
 
@@ -411,7 +424,7 @@ def get_team_members(team_id: int) -> list:
     c = conn.cursor()
     c.execute("SELECT discord_user_id FROM team_members WHERE team_id = %s", (team_id,))
     rows = c.fetchall()
-    conn.close()
+    release_connection(conn)
     return [r[0] for r in rows]
 
 
@@ -430,7 +443,7 @@ def get_open_teams(hackathon_id: int, max_size: int) -> list:
         (hackathon_id, max_size),
     )
     rows = _fetchall_dict(c)
-    conn.close()
+    release_connection(conn)
     return rows
 
 
@@ -440,7 +453,7 @@ def is_welcomed(user_id: str) -> bool:
     c = conn.cursor()
     c.execute("SELECT 1 FROM welcomed WHERE discord_user_id = %s", (user_id,))
     row = c.fetchone()
-    conn.close()
+    release_connection(conn)
     return row is not None
 
 
@@ -454,7 +467,7 @@ def mark_welcomed(user_id: str):
         )
         conn.commit()
     finally:
-        conn.close()
+        release_connection(conn)
 
 
 def get_not_welcomed_user_ids() -> list:
@@ -462,7 +475,7 @@ def get_not_welcomed_user_ids() -> list:
     c = conn.cursor()
     c.execute("SELECT discord_user_id FROM welcomed")
     rows = c.fetchall()
-    conn.close()
+    release_connection(conn)
     return [r[0] for r in rows]
 
 

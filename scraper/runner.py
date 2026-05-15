@@ -30,24 +30,40 @@ GUILD_ID = int(os.getenv("GUILD_ID", "0"))
 
 
 def _is_deadline_expired(deadline_str) -> bool:
-    """Vérifie si une deadline est déjà dépassée. Retourne True si expirée ou illisible."""
+    """Vérifie si une deadline est déjà dépassée. SYNC — ne pas appeler depuis l'event loop."""
     if not deadline_str:
-        return False  # Pas de deadline = pas expiré (on garde)
-    import dateparser
+        return False
     from datetime import datetime
+    import re
 
+    now = datetime.now()
     d = deadline_str.replace("byOFA", "").lower().replace("ended", "").strip()
+
+    # Fast-path : "ended" seul ou vide après nettoyage → expiré
+    if not d or d in ("ended", "terminé", "closed", "over"):
+        return True
+
     if " - " in d:
         d = d.split(" - ")[-1].strip()
     elif "-" in d and not deadline_str.startswith("202"):
         d = d.split("-")[-1].strip()
 
+    # Fast-path : YYYY-MM-DD
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", d)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3))) < now
+        except ValueError:
+            pass
+
+    # Fallback : dateparser (lent, ~35-900ms — uniquement pour formats ambigus)
+    import dateparser
     parsed = dateparser.parse(
         d, settings={"STRICT_PARSING": False, "PREFER_DAY_OF_MONTH": "last"}
     )
     if parsed:
-        return parsed.replace(tzinfo=None) < datetime.now()
-    return False  # Parsing échoué = on garde par prudence
+        return parsed.replace(tzinfo=None) < now
+    return False
 
 
 async def _find_channel(bot, channel_id: int, guild=None):
@@ -93,23 +109,6 @@ async def _find_channel(bot, channel_id: int, guild=None):
     return None
 
 
-async def _get_channel_titles(channel, limit: int = 500) -> set:
-    """Récupère les titres des embeds déjà postés dans un canal."""
-    titles = set()
-    try:
-        async for msg in channel.history(limit=limit):
-            for embed in msg.embeds:
-                if embed.title:
-                    # Le titre dans build_embed est "Titre — Source", on prend la partie avant " — "
-                    clean = embed.title.split(" — ")[0].strip().lower()
-                    titles.add(clean)
-    except Exception as e:
-        print(f"⚠️ Impossible de lire l'historique du canal : {e}")
-        import traceback
-
-        traceback.print_exc()
-    return titles
-
 
 LEVEL_COLORS = {
     "Débutant": 0x1D9E75,
@@ -151,39 +150,48 @@ async def run_all_scrapers(bot: discord.Client):
     HACKATHON_CHANNEL_ID = int(os.getenv("HACKATHON_CHANNEL_ID", "0"))
     ARCHIVES_CHANNEL_ID = int(os.getenv("ARCHIVES_CHANNEL_ID", "0"))
 
-    print("Démarrage du scraping — 13 sources...")
-    all_raw = []
+    print("Démarrage du scraping — 13 sources (parallélisé)...")
     source_stats = {}
 
-    for scraper in SCRAPERS:
+    async def _run_one(scraper):
         try:
-            results = scraper["fn"]()
-            source_stats[scraper["name"]] = len(results)
-            all_raw.extend(results)
+            results = await asyncio.to_thread(scraper["fn"])
+            return scraper["name"], results, None
         except Exception as e:
-            print(f"  [{scraper['name']}] Erreur inattendue : {e}")
-            source_stats[scraper["name"]] = 0
+            return scraper["name"], [], e
+
+    results_all = await asyncio.gather(*[_run_one(s) for s in SCRAPERS])
+
+    all_raw = []
+    for name, results, err in results_all:
+        if err:
+            print(f"  [{name}] Erreur inattendue : {err}")
+            source_stats[name] = 0
+        else:
+            source_stats[name] = len(results)
+            all_raw.extend(results)
 
     print(f"{len(all_raw)} hackathons bruts collectés")
     for name, count in source_stats.items():
         status = "✅" if count > 0 else "❌"
         print(f"  {status} {name}: {count}")
 
-    filtered = filter_and_score(all_raw)
+    filtered = await asyncio.to_thread(filter_and_score, all_raw)
     print(f"{len(filtered)} hackathons retenus après scoring")
 
     new_inserts = 0
     expired_skipped = 0
     for hack in filtered:
         # Vérifier la deadline avant insertion — rejeter si déjà expiré
-        if _is_deadline_expired(hack.get("deadline")):
+        # Wrappé dans to_thread : dateparser peut prendre 35–900ms et bloquerait l'event loop
+        if await asyncio.to_thread(_is_deadline_expired, hack.get("deadline")):
             print(
                 f"⏰ Expiré au scraping, ignoré : '{hack['title']}' (deadline: {hack.get('deadline')})"
             )
             expired_skipped += 1
             continue
         # Seuls les hacks n'existant pas encore seront ajoutés (id is not None)
-        hack_id = db.insert_hackathon(hack)
+        hack_id = await asyncio.to_thread(db.insert_hackathon, hack)
         if hack_id is not None:
             new_inserts += 1
 
@@ -218,80 +226,48 @@ async def post_pending_hackathons(bot: discord.Client, limit: int = 10, guild=No
     now = datetime.now()
     total_posted = 0
 
-    # Scanner les titres déjà présents dans le canal pour éviter les doublons
-    existing_titles = await _get_channel_titles(channel)
-    print(f"🔍 {len(existing_titles)} titres déjà présents dans le canal.")
     print(f"🚀 Publication de hackathons (Objectif: {limit})...")
 
     while total_posted < limit:
-        pending = db.get_unposted_hackathons(limit=min(10, limit - total_posted))
+        pending = await asyncio.to_thread(
+            db.get_unposted_hackathons, min(10, limit - total_posted)
+        )
         if not pending:
             break
 
         for hack in pending:
             # ── 1. Vérifier la deadline ──
             deadline_str = hack.get("deadline")
-            if _is_deadline_expired(deadline_str):
+            if await asyncio.to_thread(_is_deadline_expired, deadline_str):
                 print(
                     f"⏰ Hackathon expiré, supprimé de la base : '{hack['title']}' (deadline: {deadline_str})"
                 )
-                db.delete_hackathon(hack["id"])
+                await asyncio.to_thread(db.delete_hackathon, hack["id"])
                 continue
 
             # ── 2. URL valide (http/https obligatoire pour Discord) ──
             url = hack.get("url", "")
             if url and not url.startswith("http"):
                 print(f"🔗 URL invalide, supprimé : '{hack['title']}' (url: {url})")
-                db.delete_hackathon(hack["id"])
-                continue
-
-            # ── 3. Anti-doublon : vérifier si ce titre est déjà dans le canal ──
-            title_clean = hack.get("title", "").strip().lower()
-            if title_clean in existing_titles:
-                print(f"⏭️ Doublon ignoré (déjà dans le canal) : '{hack['title']}'")
-                db.update_message_id(hack["id"], "duplicate_skipped")
+                await asyncio.to_thread(db.delete_hackathon, hack["id"])
                 continue
 
             embed = build_embed(hack)
             try:
                 msg = await channel.send(embed=embed)
-
-                # Vérification anti-doublon : rescanner les 20 derniers messages après envoi
-                title_embed = hack.get("title", "").strip().lower()
-                duplicate_found = False
-                async for recent_msg in channel.history(limit=20):
-                    if recent_msg.id == msg.id:
-                        continue
-                    for e in recent_msg.embeds:
-                        if e.title:
-                            e_title = e.title.split(" — ")[0].strip().lower()
-                            if e_title == title_embed:
-                                duplicate_found = True
-                                break
-                    if duplicate_found:
-                        break
-
-                if duplicate_found:
-                    await msg.delete()
-                    print(
-                        f"🚫 Doublon détecté après envoi, message supprimé : '{hack['title']}'"
-                    )
-                    db.update_message_id(hack["id"], "duplicate_skipped")
-                    continue
-
-                db.update_message_id(hack["id"], str(msg.id))
-                existing_titles.add(title_clean)
+                await asyncio.to_thread(db.update_message_id, hack["id"], str(msg.id))
                 total_posted += 1
                 try:
                     await msg.add_reaction("👍")
                     await msg.add_reaction("❌")
                 except Exception:
                     pass
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
             except Exception as e:
                 print(f"  Erreur envoi Discord : {e}")
-                # Marquer comme échoué pour ne pas réessayer indéfiniment
-                db.update_message_id(hack["id"], "send_failed")
+                await asyncio.to_thread(
+                    db.update_message_id, hack["id"], "send_failed"
+                )
 
             if total_posted >= limit:
                 break
@@ -407,13 +383,13 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
     archived_count = 0
 
     # ── Méthode 1 : via la base de données (hackathons avec discord_message_id) ──
-    posted_hacks = db.get_posted_hackathons()
+    posted_hacks = await asyncio.to_thread(db.get_posted_hackathons)
     print(
         f"[Archive] {len(posted_hacks)} hackathon(s) trouvés en base avec message_id."
     )
 
     for hack in posted_hacks:
-        if not _is_deadline_expired(hack.get("deadline")):
+        if not await asyncio.to_thread(_is_deadline_expired, hack.get("deadline")):
             continue
         print(f"📦 [DB] Archivage de : {hack['title']}")
         try:
@@ -433,68 +409,14 @@ async def archive_expired_hackathons(bot: discord.Client, guild: discord.Guild =
                 text=f"Score: {hack.get('score', 0)}/10 · Hackathon Terminé / Archivé"
             )
             await arch_channel.send(content="**[ARCHIVE]**", embed=archive_embed)
-            db.archive_hackathon(hack["id"])
+            await asyncio.to_thread(db.archive_hackathon, hack["id"])
             archived_count += 1
             await asyncio.sleep(1)
         except Exception as e:
             print(f"  Erreur archivage DB {hack['title']} : {e}")
 
-    # ── Méthode 2 : scan direct du canal (rattrape les messages non trackés en base) ──
-    print(f"[Archive] Scan de l'historique du canal #{hack_channel.name}...")
-    already_archived_msg_ids = set()
-
-    try:
-        async for msg in hack_channel.history(limit=500):
-            if msg.author.id != bot.user.id:
-                continue
-            if not msg.embeds:
-                continue
-
-            embed = msg.embeds[0]
-
-            # Extraire la deadline depuis les fields de l'embed
-            deadline_str = None
-            for field in embed.fields:
-                if field.name and "deadline" in field.name.lower():
-                    deadline_str = field.value
-                    break
-
-            if not _is_deadline_expired(deadline_str):
-                continue
-
-            title = embed.title or "Inconnu"
-            print(f"📦 [SCAN] Archivage de : {title} (msg {msg.id})")
-
-            try:
-                # Construire un embed archive depuis l'embed existant
-                archive_embed = discord.Embed(
-                    title=embed.title,
-                    url=embed.url,
-                    color=discord.Color.dark_grey(),
-                    description=embed.description,
-                )
-                for field in embed.fields:
-                    archive_embed.add_field(
-                        name=field.name, value=field.value, inline=field.inline
-                    )
-                archive_embed.set_footer(text="Hackathon Terminé / Archivé")
-
-                await arch_channel.send(content="**[ARCHIVE]**", embed=archive_embed)
-                await msg.delete()
-
-                # Mettre à jour la base si on trouve le hackathon par titre
-                title_clean = title.split(" — ")[0].strip()
-                hack = db.get_hackathon_by_title(title_clean)
-                if hack:
-                    db.archive_hackathon(hack["id"])
-
-                archived_count += 1
-                await asyncio.sleep(1)
-            except Exception as e:
-                print(f"  Erreur archivage SCAN {title} : {e}")
-
-    except Exception as e:
-        print(f"[Archive] Erreur lors du scan du canal : {e}")
+    # Méthode 2 (scan 500 messages Discord) désactivée — saturait la session HTTP
+    # et causait erreur 10062 sur les slash commands. Méthode 1 (DB) suffit.
 
     print(f"✅ {archived_count} hackathon(s) archivé(s) au total.")
     return archived_count

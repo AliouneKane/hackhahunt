@@ -2,11 +2,20 @@ import psycopg2
 import psycopg2.pool
 import os
 import threading
+import concurrent.futures
 from contextlib import contextmanager
 from datetime import datetime
+from functools import wraps
 from typing import Optional
 
-_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+# Hard timeout côté Python (les keepalives libpq ne sont pas honorés sur macOS,
+# une conn zombie peut hang ~10 min sinon)
+_DB_TIMEOUT_SECONDS = 20
+_db_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=10, thread_name_prefix="db-worker"
+)
+
+_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 _pool_lock = threading.Lock()
 
 
@@ -16,20 +25,81 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
         with _pool_lock:
             if _pool is None:
                 _pool = psycopg2.pool.ThreadedConnectionPool(
-                    1, 10, os.getenv("DATABASE_URL")
+                    1,
+                    10,
+                    os.getenv("DATABASE_URL"),
+                    connect_timeout=5,
+                    # Probes TCP agressifs : conn morte détectée en ~16s au lieu de 60s+
+                    keepalives=1,
+                    keepalives_idle=10,
+                    keepalives_interval=3,
+                    keepalives_count=2,
+                    # Côté serveur : aucune requête ne peut dépasser 15s
+                    options="-c statement_timeout=15000",
                 )
     return _pool
 
 
+def _reset_pool():
+    """Ferme et détruit le pool actuel — utile après un changement réseau."""
+    global _pool
+    with _pool_lock:
+        old = _pool
+        _pool = None
+    if old is not None:
+        try:
+            old.closeall()
+        except Exception:
+            pass
+
+
+def _retry(func):
+    """Exécute la fonction DB dans un thread dédié avec un hard timeout. Réessaie une fois sur erreur/timeout (le pool est reset entre 2 tentatives)."""
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        last_exc: Optional[Exception] = None
+        for attempt in range(2):
+            future = _db_executor.submit(func, *args, **kwargs)
+            try:
+                return future.result(timeout=_DB_TIMEOUT_SECONDS)
+            except concurrent.futures.TimeoutError as e:
+                # On abandonne le thread (il finira en arrière-plan, conn sera GC) et on retente sur du frais.
+                last_exc = TimeoutError(
+                    f"DB call '{func.__name__}' timed out after {_DB_TIMEOUT_SECONDS}s"
+                )
+                _reset_pool()
+            except (
+                psycopg2.OperationalError,
+                psycopg2.InterfaceError,
+                psycopg2.DatabaseError,
+            ) as e:
+                last_exc = e
+        if last_exc:
+            raise last_exc
+        return None  # unreachable
+
+    return wrapper
+
+
 @contextmanager
 def _db():
-    """Context manager : récupère une connexion du pool et la restitue toujours."""
-    pool = _get_pool()
-    conn = pool.getconn()
+    """Ouvre une connexion fraîche par appel. Plus de pool = plus de conns zombies sur macOS.
+    Neon utilise un pooler côté serveur (URL contient 'pooler'), donc l'overhead reste faible (~500ms).
+    Le pooler Neon n'accepte PAS `options=-c statement_timeout` au startup → on le set après."""
+    conn = psycopg2.connect(
+        os.getenv("DATABASE_URL"),
+        connect_timeout=5,
+    )
     try:
+        with conn.cursor() as c:
+            c.execute("SET statement_timeout = 15000")
         yield conn
     finally:
-        pool.putconn(conn)
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _fetchall_dict(cursor) -> list:
@@ -129,6 +199,7 @@ def init_db():
 
 
 # ── Hackathons ────────────────────────────────────────────────────────────────
+@_retry
 def insert_hackathon(data: dict) -> Optional[int]:
     with _db() as conn:
         c = conn.cursor()
@@ -166,6 +237,7 @@ def insert_hackathon(data: dict) -> Optional[int]:
             return None
 
 
+@_retry
 def update_message_id(hackathon_id: int, message_id: str):
     with _db() as conn:
         c = conn.cursor()
@@ -176,6 +248,7 @@ def update_message_id(hackathon_id: int, message_id: str):
         conn.commit()
 
 
+@_retry
 def get_active_hackathons() -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -183,6 +256,7 @@ def get_active_hackathons() -> list:
         return _fetchall_dict(c)
 
 
+@_retry
 def get_unposted_hackathons(limit: int = 10) -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -193,6 +267,7 @@ def get_unposted_hackathons(limit: int = 10) -> list:
         return _fetchall_dict(c)
 
 
+@_retry
 def get_posted_hackathons() -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -202,6 +277,7 @@ def get_posted_hackathons() -> list:
         return _fetchall_dict(c)
 
 
+@_retry
 def delete_hackathon(hackathon_id: int):
     with _db() as conn:
         c = conn.cursor()
@@ -209,6 +285,7 @@ def delete_hackathon(hackathon_id: int):
         conn.commit()
 
 
+@_retry
 def archive_hackathon(hackathon_id: int):
     with _db() as conn:
         c = conn.cursor()
@@ -219,6 +296,7 @@ def archive_hackathon(hackathon_id: int):
         conn.commit()
 
 
+@_retry
 def get_stats() -> dict:
     with _db() as conn:
         c = conn.cursor()
@@ -245,6 +323,7 @@ def get_stats() -> dict:
         }
 
 
+@_retry
 def get_hackathon_by_title(title: str) -> Optional[dict]:
     with _db() as conn:
         c = conn.cursor()
@@ -255,6 +334,7 @@ def get_hackathon_by_title(title: str) -> Optional[dict]:
         return _fetchone_dict(c)
 
 
+@_retry
 def get_hackathon_by_message(message_id: str) -> Optional[dict]:
     with _db() as conn:
         c = conn.cursor()
@@ -263,6 +343,7 @@ def get_hackathon_by_message(message_id: str) -> Optional[dict]:
 
 
 # ── Intérêts ─────────────────────────────────────────────────────────────────
+@_retry
 def add_interest(hackathon_id: int, user_id: str, username: str):
     with _db() as conn:
         c = conn.cursor()
@@ -276,6 +357,7 @@ def add_interest(hackathon_id: int, user_id: str, username: str):
             conn.rollback()
 
 
+@_retry
 def remove_interest(hackathon_id: int, user_id: str):
     with _db() as conn:
         c = conn.cursor()
@@ -286,6 +368,7 @@ def remove_interest(hackathon_id: int, user_id: str):
         conn.commit()
 
 
+@_retry
 def get_interested_users(hackathon_id: int) -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -297,6 +380,7 @@ def get_interested_users(hackathon_id: int) -> list:
 
 
 # ── Votes de matchmaking ──────────────────────────────────────────────────────
+@_retry
 def add_vote(hackathon_id: int, voter_id: str, target_id: str):
     with _db() as conn:
         c = conn.cursor()
@@ -310,6 +394,7 @@ def add_vote(hackathon_id: int, voter_id: str, target_id: str):
             conn.rollback()
 
 
+@_retry
 def check_mutual_match(hackathon_id: int, user_a: str, user_b: str) -> bool:
     with _db() as conn:
         c = conn.cursor()
@@ -326,6 +411,7 @@ def check_mutual_match(hackathon_id: int, user_a: str, user_b: str) -> bool:
         return bool(a_voted_b and b_voted_a)
 
 
+@_retry
 def get_user_votes(hackathon_id: int, voter_id: str) -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -337,6 +423,7 @@ def get_user_votes(hackathon_id: int, voter_id: str) -> list:
 
 
 # ── Équipes ───────────────────────────────────────────────────────────────────
+@_retry
 def create_team(hackathon_id: int, member_ids: list, channel_id: str, channel_name: str) -> int:
     with _db() as conn:
         c = conn.cursor()
@@ -354,6 +441,7 @@ def create_team(hackathon_id: int, member_ids: list, channel_id: str, channel_na
         return team_id
 
 
+@_retry
 def get_user_team(hackathon_id: int, user_id: str) -> Optional[dict]:
     with _db() as conn:
         c = conn.cursor()
@@ -368,6 +456,7 @@ def get_user_team(hackathon_id: int, user_id: str) -> Optional[dict]:
         return _fetchone_dict(c)
 
 
+@_retry
 def get_team_members(team_id: int) -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -375,6 +464,7 @@ def get_team_members(team_id: int) -> list:
         return [r[0] for r in c.fetchall()]
 
 
+@_retry
 def get_open_teams(hackathon_id: int, max_size: int) -> list:
     with _db() as conn:
         c = conn.cursor()
@@ -393,6 +483,7 @@ def get_open_teams(hackathon_id: int, max_size: int) -> list:
 
 
 # ── Bienvenue ─────────────────────────────────────────────────────────────────
+@_retry
 def is_welcomed(user_id: str) -> bool:
     with _db() as conn:
         c = conn.cursor()
@@ -400,6 +491,7 @@ def is_welcomed(user_id: str) -> bool:
         return c.fetchone() is not None
 
 
+@_retry
 def mark_welcomed(user_id: str):
     with _db() as conn:
         c = conn.cursor()
@@ -410,11 +502,89 @@ def mark_welcomed(user_id: str):
         conn.commit()
 
 
+@_retry
 def get_not_welcomed_user_ids() -> list:
     with _db() as conn:
         c = conn.cursor()
         c.execute("SELECT discord_user_id FROM welcomed")
         return [r[0] for r in c.fetchall()]
+
+
+# ── Helpers Postgres pour les cogs (remplacent l'ancien db.get_connection() SQLite) ──
+@_retry
+def find_common_active_hackathon(user_a: str, user_b: str) -> Optional[dict]:
+    """Hackathon actif où deux utilisateurs sont tous deux intéressés (le mieux noté)."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT h.* FROM hackathons h
+            JOIN interests i1 ON h.id = i1.hackathon_id AND i1.discord_user_id = %s
+            JOIN interests i2 ON h.id = i2.hackathon_id AND i2.discord_user_id = %s
+            WHERE h.status = 'active'
+            ORDER BY h.score DESC LIMIT 1
+            """,
+            (user_a, user_b),
+        )
+        return _fetchone_dict(c)
+
+
+@_retry
+def add_member_to_team(team_id: int, user_id: str):
+    """Ajoute un membre à une équipe existante (idempotent)."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO team_members (team_id, discord_user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (team_id, user_id),
+        )
+        conn.commit()
+
+
+@_retry
+def get_active_teams_for_hackathon(hackathon_id: int) -> list:
+    """Liste les équipes actives d'un hackathon."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "SELECT * FROM teams WHERE hackathon_id = %s AND status = 'active'",
+            (hackathon_id,),
+        )
+        return _fetchall_dict(c)
+
+
+@_retry
+def archive_hackathon_and_teams(hackathon_id: int):
+    """Archive un hackathon et toutes les équipes associées."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            "UPDATE hackathons SET status = 'archived', archived_at = %s WHERE id = %s",
+            (datetime.now().isoformat(), hackathon_id),
+        )
+        c.execute(
+            "UPDATE teams SET status = 'archived' WHERE hackathon_id = %s",
+            (hackathon_id,),
+        )
+        conn.commit()
+
+
+@_retry
+def get_user_active_team(user_id: str) -> Optional[dict]:
+    """Équipe active la plus récente de l'utilisateur, avec titre du hackathon."""
+    with _db() as conn:
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT t.*, h.title AS hack_title FROM teams t
+            JOIN team_members tm ON t.id = tm.team_id
+            JOIN hackathons h ON t.hackathon_id = h.id
+            WHERE tm.discord_user_id = %s AND t.status = 'active'
+            ORDER BY t.created_at DESC LIMIT 1
+            """,
+            (user_id,),
+        )
+        return _fetchone_dict(c)
 
 
 if __name__ == "__main__":

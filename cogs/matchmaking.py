@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import ui
+import asyncio
 import database as db
 import os
 
@@ -34,10 +35,14 @@ class TeamSelectView(ui.View):
             target_id = target_user["discord_user_id"]
             hackathon_id = self.hackathon["id"]
 
-            db.add_vote(hackathon_id, str(interaction.user.id), target_id)
+            await asyncio.to_thread(
+                db.add_vote, hackathon_id, str(interaction.user.id), target_id
+            )
 
             # Vérifier match mutuel
-            if db.check_mutual_match(hackathon_id, str(interaction.user.id), target_id):
+            if await asyncio.to_thread(
+                db.check_mutual_match, hackathon_id, str(interaction.user.id), target_id
+            ):
                 guild = interaction.guild or interaction.client.get_guild(int(os.getenv("GUILD_ID")))
                 cog = interaction.client.get_cog("Teams")
                 if cog and guild:
@@ -85,13 +90,11 @@ class JoinTeamView(ui.View):
         if channel:
             await channel.set_permissions(interaction.user, read_messages=True, send_messages=True)
             # Ajouter le membre à l'équipe en base
-            conn = db.get_connection()
-            conn.execute(
-                "INSERT OR IGNORE INTO team_members (team_id, discord_user_id) VALUES (?, ?)",
-                (self.open_team["id"], str(interaction.user.id))
+            await asyncio.to_thread(
+                db.add_member_to_team,
+                self.open_team["id"],
+                str(interaction.user.id),
             )
-            conn.commit()
-            conn.close()
 
             await channel.send(f"**{interaction.user.display_name}** a rejoint l'équipe !")
             await interaction.response.send_message(
@@ -120,7 +123,9 @@ class Matchmaking(commands.Cog):
         if str(payload.emoji) != "👍":
             return
 
-        hackathon = db.get_hackathon_by_message(str(payload.message_id))
+        hackathon = await asyncio.to_thread(
+            db.get_hackathon_by_message, str(payload.message_id)
+        )
         if not hackathon:
             return
 
@@ -129,8 +134,10 @@ class Matchmaking(commands.Cog):
         if not member:
             return
 
-        db.add_interest(hackathon["id"], str(payload.user_id), member.display_name)
-        interested = db.get_interested_users(hackathon["id"])
+        await asyncio.to_thread(
+            db.add_interest, hackathon["id"], str(payload.user_id), member.display_name
+        )
+        interested = await asyncio.to_thread(db.get_interested_users, hackathon["id"])
 
         others = [u for u in interested if u["discord_user_id"] != str(payload.user_id)]
 
@@ -159,60 +166,13 @@ class Matchmaking(commands.Cog):
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent):
         if str(payload.emoji) != "👍":
             return
-        hackathon = db.get_hackathon_by_message(str(payload.message_id))
+        hackathon = await asyncio.to_thread(
+            db.get_hackathon_by_message, str(payload.message_id)
+        )
         if hackathon:
-            db.remove_interest(hackathon["id"], str(payload.user_id))
-
-    @discord.app_commands.command(name="team", description="Propose une équipe à un membre")
-    async def team_cmd(self, interaction: discord.Interaction, membre: discord.Member):
-        if membre.id == interaction.user.id:
-            await interaction.response.send_message("Tu ne peux pas te choisir toi-même !", ephemeral=True)
-            return
-
-        # Trouver le hackathon commun le plus récent
-        conn = db.get_connection()
-        row = conn.execute("""
-            SELECT h.* FROM hackathons h
-            JOIN interests i1 ON h.id = i1.hackathon_id AND i1.discord_user_id = ?
-            JOIN interests i2 ON h.id = i2.hackathon_id AND i2.discord_user_id = ?
-            WHERE h.status = 'active'
-            ORDER BY h.score DESC LIMIT 1
-        """, (str(interaction.user.id), str(membre.id))).fetchone()
-        conn.close()
-
-        if not row:
-            await interaction.response.send_message(
-                f"Vous n'êtes pas tous les deux intéressés par le même hackathon actif.",
-                ephemeral=True
+            await asyncio.to_thread(
+                db.remove_interest, hackathon["id"], str(payload.user_id)
             )
-            return
-
-        hackathon = dict(row)
-        db.add_vote(hackathon["id"], str(interaction.user.id), str(membre.id))
-
-        if db.check_mutual_match(hackathon["id"], str(interaction.user.id), str(membre.id)):
-            cog = self.bot.get_cog("Teams")
-            guild = interaction.guild
-            if cog and guild:
-                await cog.create_team_channel(guild, hackathon, [interaction.user.id, membre.id])
-            await interaction.response.send_message(
-                f"Match avec {membre.mention} ! Canal d'équipe créé.", ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                f"Proposition envoyée à {membre.mention} ! En attente de sa confirmation.",
-                ephemeral=True
-            )
-            try:
-                embed = discord.Embed(
-                    title="Proposition d'équipe",
-                    description=f"**{interaction.user.display_name}** veut faire équipe avec toi pour **{hackathon['title']}** !",
-                    color=0x1D9E75
-                )
-                view = TeamSelectView(hackathon, [{"discord_user_id": str(interaction.user.id), "discord_username": interaction.user.display_name}], str(membre.id))
-                await membre.send(embed=embed, view=view)
-            except discord.Forbidden:
-                pass
 
 
 async def setup(bot):

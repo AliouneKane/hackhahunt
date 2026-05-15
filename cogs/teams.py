@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
+import asyncio
 import database as db
 import os
 
@@ -49,11 +50,12 @@ class Teams(commands.Cog):
         )
 
         # Enregistrer l'équipe en base
-        team_id = db.create_team(
+        team_id = await asyncio.to_thread(
+            db.create_team,
             hackathon["id"],
             [str(uid) for uid in member_ids],
             str(channel.id),
-            channel_name
+            channel_name,
         )
 
         # Message de bienvenue + modalités
@@ -149,7 +151,7 @@ class Teams(commands.Cog):
         if not guild:
             return
 
-        hackathons = db.get_active_hackathons()
+        hackathons = await asyncio.to_thread(db.get_active_hackathons)
         now = datetime.now()
 
         for hack in hackathons:
@@ -168,12 +170,9 @@ class Teams(commands.Cog):
                 await self._archive_hackathon(guild, hack)
             elif days_left in [7, 3, 1]:
                 # Rappel avant deadline
-                conn = db.get_connection()
-                teams = conn.execute(
-                    "SELECT * FROM teams WHERE hackathon_id = ? AND status = 'active'",
-                    (hack["id"],)
-                ).fetchall()
-                conn.close()
+                teams = await asyncio.to_thread(
+                    db.get_active_teams_for_hackathon, hack["id"]
+                )
 
                 for team in teams:
                     channel = guild.get_channel(int(team["channel_id"]))
@@ -210,57 +209,14 @@ class Teams(commands.Cog):
 
         await archives_channel.send(embed=embed)
 
-        # Marquer le hackathon comme archivé en base
-        conn = db.get_connection()
-        conn.execute(
-            "UPDATE hackathons SET status = 'archived' WHERE id = ?",
-            (hack["id"],)
-        )
-        # Marquer les équipes associées comme terminées
-        conn.execute(
-            "UPDATE teams SET status = 'archived' WHERE hackathon_id = ?",
-            (hack["id"],)
-        )
-        conn.commit()
-        conn.close()
+        # Marquer le hackathon ET les équipes associées comme archivés
+        await asyncio.to_thread(db.archive_hackathon_and_teams, hack["id"])
 
         print(f"  [Archive] '{hack['title']}' archivé.")
 
     @check_deadlines.before_loop
     async def before_check(self):
         await self.bot.wait_until_ready()
-
-    @discord.app_commands.command(name="monequipe", description="Voir ton équipe actuelle")
-    async def monequipe(self, interaction: discord.Interaction):
-        conn = db.get_connection()
-        row = conn.execute("""
-            SELECT t.*, h.title as hack_title FROM teams t
-            JOIN team_members tm ON t.id = tm.team_id
-            JOIN hackathons h ON t.hackathon_id = h.id
-            WHERE tm.discord_user_id = ? AND t.status = 'active'
-            ORDER BY t.created_at DESC LIMIT 1
-        """, (str(interaction.user.id),)).fetchone()
-        conn.close()
-
-        if not row:
-            await interaction.response.send_message(
-                "Tu n'as pas encore d'équipe active. Clique sur 👍 sous un hackathon pour commencer !",
-                ephemeral=True
-            )
-            return
-
-        team = dict(row)
-        channel = interaction.guild.get_channel(int(team["channel_id"]))
-        members_ids = db.get_team_members(team["id"])
-        members_mentions = [f"<@{uid}>" for uid in members_ids]
-
-        embed = discord.Embed(
-            title=f"Ton équipe — {team['hack_title']}",
-            color=0x534AB7
-        )
-        embed.add_field(name="Canal", value=channel.mention if channel else "Introuvable", inline=True)
-        embed.add_field(name="Membres", value=" · ".join(members_mentions), inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):

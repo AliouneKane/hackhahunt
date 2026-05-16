@@ -4,6 +4,10 @@ Bot Discord qui automatise la découverte de hackathons et facilite la création
 
 Surveille **13 plateformes** en continu, filtre les hackathons par qualité et notifie la communauté automatiquement.
 
+> **Hébergement local** — Le bot tourne sur ma machine personnelle (macOS), pas sur un serveur cloud.
+> Il est actif uniquement quand **ma machine est allumée et que je suis connecté à Discord**.
+> Faute de pouvoir financer un hébergement cloud (Railway, Fly.io, etc.), c'est la solution retenue pour l'instant.
+
 ## Fonctionnalités
 
 - **Scraping multi-plateformes** — Devpost, MLH, Kaggle, Zindi, DrivenData, Eventbrite, ChallengeData, Challengerocket, Hackmakers, A2SV, Geekulcha, OpportunitiesAfrica, GoogleSenegal

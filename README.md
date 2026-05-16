@@ -24,6 +24,8 @@ hackahunt/
 ├── scraper_cron.py          # Scraper autonome (lancé toutes les 6h, indépendant du bot)
 ├── database.py              # Accès PostgreSQL (hackathons, équipes, matchmaking, welcomed)
 ├── requirements.txt
+├── Dockerfile               # Image Python pour bot et scraper
+├── docker-compose.yml       # Orchestration : db + bot + scraper
 ├── .env                     # Variables d'environnement (non versionné)
 │
 ├── cogs/
@@ -47,8 +49,7 @@ hackahunt/
 
 ## Prérequis
 
-- Python 3.9+
-- PostgreSQL
+- [Docker](https://www.docker.com/) et Docker Compose
 - Bot Discord avec les intents **Server Members** et **Reactions** activés
 
 ## Installation
@@ -56,8 +57,6 @@ hackahunt/
 ```bash
 git clone https://github.com/AliouneKane/hackhahunt.git
 cd hackahunt
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
 ```
 
 Créer le fichier `.env` :
@@ -68,24 +67,38 @@ GUILD_ID=id_du_serveur
 HACKATHON_CHANNEL_ID=id_canal_hackathons
 ARCHIVES_CHANNEL_ID=id_canal_archives
 MATCHMAKING_CHANNEL_ID=id_canal_matchmaking
-DATABASE_URL=postgresql://user:password@localhost:5432/hackahunt
 ```
 
 ## Lancement
 
-Démarrer le bot :
+Tout démarrer (base de données + bot + scraper) :
 
 ```bash
+docker compose up -d
+```
+
+La base de données est initialisée automatiquement au premier démarrage.
+
+Lancer uniquement la base de données (pour du développement local) :
+
+```bash
+docker compose up -d db
 python3 bot.py
 ```
 
-Lancer un scraping manuel :
+Lancer un scraping manuel hors Docker :
 
 ```bash
 python3 scraper_cron.py
 ```
 
-Le bot initialise la base de données automatiquement au premier démarrage.
+## Services Docker
+
+| Service | Description | Fréquence |
+| --- | --- | --- |
+| `db` | PostgreSQL 17 (port 5435) | Toujours actif |
+| `bot` | Bot Discord principal | Toujours actif |
+| `scraper` | Scraping des 13 plateformes | Toutes les 6h |
 
 ## Flux utilisateur
 

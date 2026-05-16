@@ -16,21 +16,31 @@ Surveille **13 plateformes** en continu, filtre les hackathons par qualité et n
 
 ## Architecture
 
-Le bot et le scraper tournent en **deux processus séparés** pour éviter de bloquer l'event loop Discord.
+Le projet tourne entièrement en local sur macOS. Trois processus indépendants :
+
+| Processus | Démarrage | Rôle |
+| --- | --- | --- |
+| **PostgreSQL** | Docker (always-on) | Base de données |
+| **bot.py** | LaunchAgent (au login) | Publication, matchmaking, archivage |
+| **scraper_cron.py** | LaunchAgent (toutes les 6h) | Scraping des 13 plateformes |
 
 ```text
 hackahunt/
-├── bot.py                   # Bot Discord : événements, matchmaking, tâches planifiées
-├── scraper_cron.py          # Scraper autonome (lancé toutes les 6h, indépendant du bot)
-├── database.py              # Accès PostgreSQL (hackathons, équipes, matchmaking, welcomed)
+├── bot.py                   # Bot Discord : matchmaking, publication, archivage
+├── scraper_cron.py          # Scraper autonome, lancé toutes les 6h
+├── database.py              # Accès PostgreSQL
 ├── requirements.txt
-├── Dockerfile               # Image Python pour bot et scraper
-├── docker-compose.yml       # Orchestration : db + bot + scraper
+├── docker-compose.yml       # Lance uniquement la base PostgreSQL
+├── Dockerfile
 ├── .env                     # Variables d'environnement (non versionné)
 │
+├── launchagents/            # Configs macOS LaunchAgent (à adapter et copier dans ~/Library/LaunchAgents/)
+│   ├── com.hackahunt.bot.plist
+│   └── com.hackahunt.scraper.plist
+│
 ├── cogs/
-│   ├── matchmaking.py       # Réactions 👍, votes, matchs mutuels, salons d'équipe
-│   └── teams.py             # Création salons privés, rappels deadline, archivage équipes
+│   ├── matchmaking.py       # Réactions 👍, votes, matchs mutuels
+│   └── teams.py             # Salons d'équipe, rappels, archivage
 │
 └── scraper/
     ├── runner.py            # Orchestrateur async (posting Discord, archivage)
@@ -49,7 +59,9 @@ hackahunt/
 
 ## Prérequis
 
-- [Docker](https://www.docker.com/) et Docker Compose
+- macOS
+- [Docker Desktop](https://www.docker.com/)
+- Python 3.9+ avec venv
 - Bot Discord avec les intents **Server Members** et **Reactions** activés
 
 ## Installation
@@ -57,6 +69,8 @@ hackahunt/
 ```bash
 git clone https://github.com/AliouneKane/hackhahunt.git
 cd hackahunt
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
 ```
 
 Créer le fichier `.env` :
@@ -67,38 +81,43 @@ GUILD_ID=id_du_serveur
 HACKATHON_CHANNEL_ID=id_canal_hackathons
 ARCHIVES_CHANNEL_ID=id_canal_archives
 MATCHMAKING_CHANNEL_ID=id_canal_matchmaking
+DATABASE_URL=postgresql://hackahunt:hackahunt_local_pw@localhost:5435/hackahunt
 ```
 
-## Lancement
+## Démarrage
 
-Tout démarrer (base de données + bot + scraper) :
+**1. Lancer la base de données :**
 
 ```bash
 docker compose up -d
 ```
 
-La base de données est initialisée automatiquement au premier démarrage.
+**2. Installer les LaunchAgents (démarrage automatique au login) :**
 
-Lancer uniquement la base de données (pour du développement local) :
+Copier les fichiers depuis `launchagents/`, adapter les chemins (`/CHEMIN/VERS/hackahunt` et `VOTRE_USER`), puis :
 
 ```bash
-docker compose up -d db
-python3 bot.py
+cp launchagents/*.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.hackahunt.bot.plist
+launchctl load ~/Library/LaunchAgents/com.hackahunt.scraper.plist
 ```
 
-Lancer un scraping manuel hors Docker :
+Le bot démarre automatiquement à chaque login et se relance en cas de crash.
+Le scraper tourne toutes les 6h.
+
+**Lancer manuellement (sans LaunchAgent) :**
 
 ```bash
+python3 bot.py
 python3 scraper_cron.py
 ```
 
-## Services Docker
+**Consulter les logs :**
 
-| Service | Description | Fréquence |
-| --- | --- | --- |
-| `db` | PostgreSQL 17 (port 5435) | Toujours actif |
-| `bot` | Bot Discord principal | Toujours actif |
-| `scraper` | Scraping des 13 plateformes | Toutes les 6h |
+```bash
+tail -f ~/Library/Logs/hackahunt-bot.log
+tail -f ~/Library/Logs/hackahunt-scraper.log
+```
 
 ## Flux utilisateur
 

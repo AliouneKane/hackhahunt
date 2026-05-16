@@ -13,31 +13,5 @@ services:
     volumes:
       - hackahunt-pgdata:/var/lib/postgresql/data
 
-  bot:
-    build: .
-    container_name: hackahunt-bot
-    restart: unless-stopped
-    depends_on:
-      - db
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://hackahunt:hackahunt_local_pw@db:5432/hackahunt
-    command: python bot.py
-
-  scraper:
-    build: .
-    container_name: hackahunt-scraper
-    restart: unless-stopped
-    depends_on:
-      - db
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://hackahunt:hackahunt_local_pw@db:5432/hackahunt
-    command: >
-      sh -c "while true; do python scraper_cron.py; sleep 21600; done"
-
 volumes:
   hackahunt-pgdata:
-    external: true

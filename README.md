@@ -4,7 +4,7 @@ Bot Discord qui automatise la découverte de hackathons et facilite la création
 
 Surveille **13 plateformes** en continu, filtre les hackathons par qualité et notifie la communauté automatiquement.
 
-> **Hébergement** — Le bot tourne sur ma machine personnelle (macOS). La base de données est hébergée sur [Neon](https://neon.tech) (PostgreSQL cloud). Le bot est actif dès que **ma machine est allumée**, sans avoir besoin d'être connecté à Discord.
+> **Hébergement** — Le bot tourne sur une machine personnelle (macOS ou Windows). La base de données est hébergée sur [Neon](https://neon.tech) (PostgreSQL cloud, gratuit). Le bot est actif dès que **la machine est allumée**, sans avoir besoin d'être connecté à Discord.
 
 ## Fonctionnalités
 
@@ -26,18 +26,18 @@ Surveille **13 plateformes** en continu, filtre les hackathons par qualité et n
 │         Machine locale          │     │      Neon (cloud)    │
 │                                 │     │                      │
 │  bot.py ──────────────────────────────► PostgreSQL           │
-│  (LaunchAgent, au login)        │     │                      │
+│  (démarrage automatique)        │     │                      │
 │                                 │     │                      │
 │  scraper_cron.py ─────────────────────► PostgreSQL           │
-│  (LaunchAgent, toutes les 30min)│     │                      │
+│  (au login + toutes les 30min)  │     │                      │
 └─────────────────────────────────┘     └──────────────────────┘
 ```
 
-| Processus | Démarrage | Rôle |
-| --- | --- | --- |
-| **bot.py** | LaunchAgent (au login) | Publication, matchmaking, archivage, logs |
-| **scraper_cron.py** | LaunchAgent (au login + toutes les 30min) | Scraping des 13 plateformes |
-| **Neon PostgreSQL** | Cloud (always-on) | Base de données |
+| Processus | Rôle |
+| --- | --- |
+| **bot.py** | Publication, matchmaking, archivage, logs Discord |
+| **scraper_cron.py** | Scraping des 13 plateformes (au démarrage + toutes les 30min) |
+| **Neon PostgreSQL** | Base de données cloud (always-on) |
 
 ```text
 hackahunt/
@@ -47,7 +47,7 @@ hackahunt/
 ├── requirements.txt
 ├── .env                     # Variables d'environnement (non versionné)
 │
-├── launchagents/            # Configs macOS LaunchAgent (à adapter et copier dans ~/Library/LaunchAgents/)
+├── launchagents/            # Configs macOS LaunchAgent
 │   ├── com.hackahunt.bot.plist
 │   └── com.hackahunt.scraper.plist
 │
@@ -72,21 +72,39 @@ hackahunt/
 
 ## Prérequis
 
-- macOS
 - Python 3.9+
 - Un compte [Neon](https://neon.tech) (PostgreSQL cloud, gratuit)
-- Bot Discord avec les intents **Server Members**, **Reactions** et **Presences** activés
+- Bot Discord avec les intents **Server Members**, **Reactions** et **Presences** activés dans le [portail développeur Discord](https://discord.com/developers/applications)
 
 ## Installation
+
+**1. Cloner le projet**
 
 ```bash
 git clone https://github.com/AliouneKane/hackhahunt.git
 cd hackahunt
+```
+
+**2. Créer et activer l'environnement virtuel**
+
+macOS :
+```bash
 python3 -m venv venv && source venv/bin/activate
+```
+
+Windows :
+```bat
+python -m venv venv
+venv\Scripts\activate
+```
+
+**3. Installer les dépendances**
+
+```bash
 pip install -r requirements.txt
 ```
 
-Créer le fichier `.env` :
+**4. Créer le fichier `.env`**
 
 ```env
 DISCORD_TOKEN=votre_token
@@ -99,9 +117,9 @@ OWNER_ID=votre_id_discord
 DATABASE_URL=postgresql://...votre_url_neon...
 ```
 
-## Démarrage
+## Démarrage automatique
 
-**Installer les LaunchAgents (démarrage automatique au login) :**
+### macOS — LaunchAgent
 
 Copier les fichiers depuis `launchagents/`, adapter les chemins (`/CHEMIN/VERS/hackahunt` et `VOTRE_USER`), puis :
 
@@ -111,16 +129,45 @@ launchctl load ~/Library/LaunchAgents/com.hackahunt.bot.plist
 launchctl load ~/Library/LaunchAgents/com.hackahunt.scraper.plist
 ```
 
-Dès le login, le bot démarre, vide la file d'attente et publie dans #hackathons. Le scraper cherche de nouveaux hackathons au démarrage puis toutes les 30 minutes.
+Le bot démarre automatiquement à chaque login et se relance en cas de crash.
 
-**Lancer manuellement (sans LaunchAgent) :**
+### Windows — Planificateur de tâches
 
-```bash
-python3 bot.py
-python3 scraper_cron.py
-```
+Le Planificateur de tâches Windows remplace les LaunchAgents macOS.
+
+**Pour `bot.py` (démarrage au login, redémarrage si arrêt) :**
+
+1. Ouvrir le **Planificateur de tâches** (`taskschd.msc`)
+2. Créer une tâche de base → nommer la `HackahuntBot`
+3. Déclencheur : **Lors de l'ouverture de session**
+4. Action : **Démarrer un programme**
+   - Programme : `C:\chemin\vers\hackahunt\venv\Scripts\python.exe`
+   - Arguments : `C:\chemin\vers\hackahunt\bot.py`
+   - Démarrer dans : `C:\chemin\vers\hackahunt`
+5. Dans les paramètres : cocher **Redémarrer la tâche si elle s'arrête**
+
+**Pour `scraper_cron.py` (au login + toutes les 30 minutes) :**
+
+Répéter les étapes ci-dessus avec le nom `HackahuntScraper`, le script `scraper_cron.py`, et dans le déclencheur cocher **Répéter la tâche toutes les : 30 minutes**.
 
 **Consulter les logs :**
+
+Les logs sont écrits dans la console. Pour les rediriger vers un fichier, remplacer les arguments par :
+
+```
+-u C:\chemin\vers\hackahunt\bot.py >> C:\chemin\vers\hackahunt\logs\bot.log 2>&1
+```
+
+---
+
+### Lancement manuel (macOS et Windows)
+
+```bash
+python bot.py
+python scraper_cron.py
+```
+
+**Consulter les logs sur macOS :**
 
 ```bash
 tail -f ~/Library/Logs/hackahunt-bot.log

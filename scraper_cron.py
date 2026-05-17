@@ -13,8 +13,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import requests
 import database as db
 from datetime import datetime
+
+
+def discord_log(message: str):
+    token = os.getenv("DISCORD_TOKEN")
+    channel_id = os.getenv("BOT_LOGS_CHANNEL_ID")
+    if not token or not channel_id:
+        return
+    try:
+        requests.post(
+            f"https://discord.com/api/v10/channels/{channel_id}/messages",
+            headers={"Authorization": f"Bot {token}", "Content-Type": "application/json"},
+            json={"content": message},
+            timeout=10,
+        )
+    except Exception:
+        pass
 from scraper.devpost import scrape_devpost
 from scraper.zindi import scrape_zindi
 from scraper.mlh import scrape_mlh
@@ -80,10 +97,12 @@ def _is_deadline_expired(deadline_str) -> bool:
 def run():
     start = datetime.now()
     print(f"[{start:%Y-%m-%d %H:%M}] ── Scraping démarré ──")
+    discord_log(f"🔍 **Le bot est en train de parcourir les 13 plateformes** à la recherche de nouveaux hackathons ({start:%d/%m/%Y à %H:%M}). Cette étape prend 1 à 2 minutes, ne t'inquiète pas si tu ne vois rien pendant ce temps.")
 
     db.init_db()
 
     all_raw = []
+    errors = []
     for scraper in SCRAPERS:
         try:
             results = scraper["fn"]()
@@ -92,6 +111,7 @@ def run():
             print(f"  {status} {scraper['name']}: {len(results)}")
         except Exception as e:
             print(f"  ❌ {scraper['name']}: {e}")
+            errors.append(scraper["name"])
 
     print(f"{len(all_raw)} hackathons bruts collectés")
 
@@ -113,6 +133,14 @@ def run():
         f"[{datetime.now():%Y-%m-%d %H:%M}] ── Terminé en {elapsed:.0f}s : "
         f"{new_inserts} nouveaux, {expired_skipped} expirés ignorés ──"
     )
+
+    if new_inserts > 0:
+        summary = f"✅ **Le bot a fini de scraper les 13 plateformes** ({elapsed:.0f}s). Il a trouvé **{new_inserts} nouveau(x) hackathon(s)** et les a ajoutés à la file — il est maintenant en train de les poster dans #hackathons un par un, toutes les 5 minutes."
+    else:
+        summary = f"✅ **Le bot a fini de scraper les 13 plateformes** ({elapsed:.0f}s). Aucun nouveau hackathon trouvé — tout ce qui est disponible est déjà dans la base. Prochain scraping dans 30 minutes."
+    if errors:
+        summary += f"\n⚠️ Ces plateformes n'ont pas répondu et ont été ignorées cette fois : {', '.join(errors)}."
+    discord_log(summary)
 
 
 if __name__ == "__main__":

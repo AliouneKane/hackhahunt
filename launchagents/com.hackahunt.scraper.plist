@@ -15,12 +15,12 @@
     <key>WorkingDirectory</key>
     <string>/CHEMIN/VERS/hackahunt</string>
 
-    <!-- Scraping toutes les 6 heures (21600 secondes) -->
+    <!-- Scraping toutes les 30 minutes (1800 secondes) -->
     <key>StartInterval</key>
-    <integer>21600</integer>
+    <integer>1800</integer>
 
     <key>RunAtLoad</key>
-    <false/>
+    <true/>
 
     <key>StandardOutPath</key>
     <string>/Users/VOTRE_USER/Library/Logs/hackahunt-scraper.log</string>

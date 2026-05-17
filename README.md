@@ -4,38 +4,47 @@ Bot Discord qui automatise la découverte de hackathons et facilite la création
 
 Surveille **13 plateformes** en continu, filtre les hackathons par qualité et notifie la communauté automatiquement.
 
-> **Hébergement local** — Le bot tourne sur ma machine personnelle (macOS), pas sur un serveur cloud.
-> Il est actif uniquement quand **ma machine est allumée et que je suis connecté à Discord**.
-> Faute de pouvoir financer un hébergement cloud (Railway, Fly.io, etc.), c'est la solution retenue pour l'instant.
+> **Hébergement** — Le bot tourne sur ma machine personnelle (macOS). La base de données est hébergée sur [Neon](https://neon.tech) (PostgreSQL cloud). Le bot est actif dès que **ma machine est allumée**, sans avoir besoin d'être connecté à Discord.
 
 ## Fonctionnalités
 
 - **Scraping multi-plateformes** — Devpost, MLH, Kaggle, Zindi, DrivenData, Eventbrite, ChallengeData, Challengerocket, Hackmakers, A2SV, Geekulcha, OpportunitiesAfrica, GoogleSenegal
 - **Scoring automatique** — chaque hackathon est noté 0/10 selon la pertinence du thème, la géographie, la langue et la source
 - **Publication cadencée** — 1 hackathon posté toutes les 5 minutes dans #hackathons
+- **Rattrapage au démarrage** — tous les hackathons en attente sont publiés d'un coup dès l'allumage de la machine
 - **Archivage automatique** — les hackathons expirés sont déplacés dans #archives toutes les 12h
 - **Rappels deadline** — notifications J-7, J-3, J-1 dans les salons d'équipe
 - **Matchmaking par réaction** — clique 👍 sur un hackathon, choisis un coéquipier en MP, salon privé créé automatiquement
 - **Onboarding** — message de bienvenue en MP (règles + guide) envoyé à chaque nouveau membre
+- **Canal de logs** — le bot poste en temps réel dans #log-bots ce qu'il est en train de faire
+- **DM de résumé** — à chaque reconnexion Discord, le propriétaire reçoit un MP résumant l'activité depuis sa dernière connexion
 
 ## Architecture
 
-Le projet tourne entièrement en local sur macOS. Trois processus indépendants :
+```text
+┌─────────────────────────────────┐     ┌──────────────────────┐
+│         Machine locale          │     │      Neon (cloud)    │
+│                                 │     │                      │
+│  bot.py ──────────────────────────────► PostgreSQL           │
+│  (LaunchAgent, au login)        │     │                      │
+│                                 │     │                      │
+│  scraper_cron.py ─────────────────────► PostgreSQL           │
+│  (LaunchAgent, toutes les 30min)│     │                      │
+└─────────────────────────────────┘     └──────────────────────┘
+```
 
 | Processus | Démarrage | Rôle |
 | --- | --- | --- |
-| **PostgreSQL** | Docker (always-on) | Base de données |
-| **bot.py** | LaunchAgent (au login) | Publication, matchmaking, archivage |
-| **scraper_cron.py** | LaunchAgent (toutes les 6h) | Scraping des 13 plateformes |
+| **bot.py** | LaunchAgent (au login) | Publication, matchmaking, archivage, logs |
+| **scraper_cron.py** | LaunchAgent (au login + toutes les 30min) | Scraping des 13 plateformes |
+| **Neon PostgreSQL** | Cloud (always-on) | Base de données |
 
 ```text
 hackahunt/
-├── bot.py                   # Bot Discord : matchmaking, publication, archivage
-├── scraper_cron.py          # Scraper autonome, lancé toutes les 6h
-├── database.py              # Accès PostgreSQL
+├── bot.py                   # Bot Discord : publication, matchmaking, archivage, logs
+├── scraper_cron.py          # Scraper autonome, lancé au démarrage puis toutes les 30min
+├── database.py              # Accès PostgreSQL (Neon)
 ├── requirements.txt
-├── docker-compose.yml       # Lance uniquement la base PostgreSQL
-├── Dockerfile
 ├── .env                     # Variables d'environnement (non versionné)
 │
 ├── launchagents/            # Configs macOS LaunchAgent (à adapter et copier dans ~/Library/LaunchAgents/)
@@ -64,9 +73,9 @@ hackahunt/
 ## Prérequis
 
 - macOS
-- [Docker Desktop](https://www.docker.com/)
-- Python 3.9+ avec venv
-- Bot Discord avec les intents **Server Members** et **Reactions** activés
+- Python 3.9+
+- Un compte [Neon](https://neon.tech) (PostgreSQL cloud, gratuit)
+- Bot Discord avec les intents **Server Members**, **Reactions** et **Presences** activés
 
 ## Installation
 
@@ -85,18 +94,14 @@ GUILD_ID=id_du_serveur
 HACKATHON_CHANNEL_ID=id_canal_hackathons
 ARCHIVES_CHANNEL_ID=id_canal_archives
 MATCHMAKING_CHANNEL_ID=id_canal_matchmaking
-DATABASE_URL=postgresql://hackahunt:hackahunt_local_pw@localhost:5435/hackahunt
+BOT_LOGS_CHANNEL_ID=id_canal_log_bots
+OWNER_ID=votre_id_discord
+DATABASE_URL=postgresql://...votre_url_neon...
 ```
 
 ## Démarrage
 
-**1. Lancer la base de données :**
-
-```bash
-docker compose up -d
-```
-
-**2. Installer les LaunchAgents (démarrage automatique au login) :**
+**Installer les LaunchAgents (démarrage automatique au login) :**
 
 Copier les fichiers depuis `launchagents/`, adapter les chemins (`/CHEMIN/VERS/hackahunt` et `VOTRE_USER`), puis :
 
@@ -106,8 +111,7 @@ launchctl load ~/Library/LaunchAgents/com.hackahunt.bot.plist
 launchctl load ~/Library/LaunchAgents/com.hackahunt.scraper.plist
 ```
 
-Le bot démarre automatiquement à chaque login et se relance en cas de crash.
-Le scraper tourne toutes les 6h.
+Dès le login, le bot démarre, vide la file d'attente et publie dans #hackathons. Le scraper cherche de nouveaux hackathons au démarrage puis toutes les 30 minutes.
 
 **Lancer manuellement (sans LaunchAgent) :**
 

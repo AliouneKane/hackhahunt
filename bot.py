@@ -11,11 +11,30 @@ load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID"))
+BOT_LOGS_CHANNEL_ID = int(os.getenv("BOT_LOGS_CHANNEL_ID", "0"))
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+
+_activity_log = []
+_bot_start_time = None
+_ignore_presence_until = None
+
+
+async def log(message: str):
+    now = datetime.now()
+    _activity_log.append(f"**{now:%H:%M}** — {message}")
+    if not BOT_LOGS_CHANNEL_ID:
+        return
+    try:
+        channel = bot.get_channel(BOT_LOGS_CHANNEL_ID) or await bot.fetch_channel(BOT_LOGS_CHANNEL_ID)
+        await channel.send(message)
+    except Exception:
+        pass
 
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
 intents.reactions = True
+intents.presences = True
 
 bot = commands.Bot(command_prefix="/", intents=intents)
 
@@ -126,12 +145,36 @@ _bot_initialized = False
 
 
 @bot.event
+async def on_presence_update(before: discord.Member, after: discord.Member):
+    global _activity_log, _ignore_presence_until
+    if after.id != OWNER_ID:
+        return
+    if _ignore_presence_until and datetime.now() < _ignore_presence_until:
+        return
+    if before.status == discord.Status.offline and after.status != discord.Status.offline:
+        if not _activity_log:
+            summary = "Rien de particulier à signaler depuis ta dernière connexion — le bot était en attente de nouveaux hackathons."
+        else:
+            summary = "\n".join(_activity_log)
+        _activity_log = []
+        try:
+            await after.send(
+                f"👋 **Voici ce que le bot a fait depuis ta dernière connexion :**\n\n{summary}"
+            )
+        except Exception:
+            pass
+
+
+@bot.event
 async def on_ready():
-    global _bot_initialized
+    global _bot_initialized, _bot_start_time, _ignore_presence_until
     print(f"🤖 {bot.user} est en ligne ! (latence: {round(bot.latency*1000)}ms)")
     if _bot_initialized:
         return
     _bot_initialized = True
+    from datetime import timedelta
+    _bot_start_time = datetime.now()
+    _ignore_presence_until = datetime.now() + timedelta(seconds=60)
 
     try:
         synced = await bot.tree.sync()
@@ -140,6 +183,13 @@ async def on_ready():
         print(f"❌ Erreur sync commandes : {e}")
 
     await asyncio.to_thread(db.init_db)
+    stats = await asyncio.to_thread(db.get_stats)
+    pending = stats.get('total_pending', 0)
+    await log(
+        f"🟢 **Le bot vient de démarrer et se connecte au serveur.**\n"
+        f"Il est en train de préparer la publication — **{pending} hackathon(s)** sont en attente dans la file.\n"
+        f"Il va maintenant les poster un par un dans #hackathons, toutes les 5 minutes."
+    )
     post_pending_task.start()
     archive_expired_task.start()
 
@@ -163,9 +213,16 @@ async def post_pending_task():
             return
         posted = await post_pending_hackathons(bot, limit=1, guild=guild)
         stats = await asyncio.to_thread(db.get_stats)
-        print(f"⏰ [post_pending_task] Terminé : {posted} posté(s), {stats['total_pending']} en attente")
+        pending = stats['total_pending']
+        print(f"⏰ [post_pending_task] Terminé : {posted} posté(s), {pending} en attente")
+        if posted > 0:
+            if pending > 0:
+                await log(f"📬 **Le bot vient de poster 1 hackathon dans #hackathons.** Il en reste **{pending}** en attente — il continue à en poster un toutes les 5 minutes.")
+            else:
+                await log(f"📬 **Le bot vient de poster 1 hackathon dans #hackathons.** La file est maintenant vide — il attend que le scraper trouve de nouveaux hackathons.")
     except Exception as e:
         print(f"❌ [post_pending_task] Erreur : {e}")
+        await log(f"❌ **Le bot a essayé de poster un hackathon mais quelque chose a planté.** Il va réessayer dans 5 minutes. Erreur : `{e}`")
 
 
 @tasks.loop(hours=12)
@@ -179,14 +236,26 @@ async def archive_expired_task():
             return
         count = await archive_expired_hackathons(bot, guild=guild)
         print(f"⏰ [archive_expired_task] Terminé : {count} hackathon(s) archivé(s)")
+        if count > 0:
+            await log(f"📁 **Le bot vient de déplacer {count} hackathon(s) dans #archives** car leur deadline est passée. Il continue à surveiller les autres.")
     except Exception as e:
         print(f"❌ [archive_expired_task] Erreur : {e}")
+        await log(f"❌ **Le bot a essayé d'archiver les hackathons expirés mais quelque chose a planté.** Il réessaiera dans 12h. Erreur : `{e}`")
 
 
 @post_pending_task.before_loop
 async def before_post_pending():
     await bot.wait_until_ready()
     await asyncio.sleep(10)
+    from scraper.runner import post_pending_hackathons
+    guild = discord.utils.get(bot.guilds, id=GUILD_ID)
+    await log("🚀 **Le bot est en train de publier tous les hackathons qui attendaient** depuis la dernière fois que la machine était allumée...")
+    posted = await post_pending_hackathons(bot, limit=500, guild=guild)
+    print(f"🚀 [Startup] {posted} hackathon(s) rattrapés au démarrage")
+    if posted > 0:
+        await log(f"✅ **Rattrapage terminé — {posted} hackathon(s) viennent d'être postés dans #hackathons.** Le bot reprend maintenant la cadence normale : 1 hackathon toutes les 5 minutes.")
+    else:
+        await log("✅ **Aucun hackathon en attente au démarrage.** Le bot est prêt et surveille la file — dès que le scraper trouve de nouveaux hackathons, ils seront postés.")
 
 
 @archive_expired_task.before_loop

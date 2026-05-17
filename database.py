@@ -28,7 +28,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
                     1,
                     10,
                     os.getenv("DATABASE_URL"),
-                    connect_timeout=5,
+                    connect_timeout=10,
                     # Probes TCP agressifs : conn morte détectée en ~16s au lieu de 60s+
                     keepalives=1,
                     keepalives_idle=10,
